@@ -110,19 +110,20 @@ def build_profile(project_id: int):
         p = db.get(Project, project_id)
         try:
             prof = generate_profile(p.url)
+            p.name = prof["name"] or p.name
+            p.description = prof["description"]
+            p.icp = prof["icp"]
+            p.pain_points = prof["pain_points"]
+            p.keywords = prof["keywords"]
+            p.negative_keywords = prof["negative_keywords"]
+            p.subreddits = prof["subreddits"]
+            refresh_embedding(p)
+            db.commit()
         except Exception as e:
+            db.rollback()
+            p = db.get(Project, project_id)
             p.description = f"Setup failed: {e}"
             db.commit()
-            return
-        p.name = prof.get("name") or p.name
-        p.description = prof.get("description", "")
-        p.icp = prof.get("icp", "")
-        p.pain_points = prof.get("pain_points", [])
-        p.keywords = prof.get("keywords", [])
-        p.negative_keywords = prof.get("negative_keywords", [])
-        p.subreddits = prof.get("subreddits", [])
-        refresh_embedding(p)
-        db.commit()
 
 
 @app.get("/api/projects")
@@ -153,6 +154,7 @@ def regenerate_project(project_id: int, tasks: BackgroundTasks, user: User = Dep
                        db: Session = Depends(get_db)):
     p = own_project(db, user, project_id)
     p.description = ""
+    p.profile_embedding = None
     db.commit()
     tasks.add_task(build_profile, p.id)
     return project_out(p)

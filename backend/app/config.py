@@ -1,3 +1,5 @@
+import os
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,3 +28,8 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+if os.environ.get("IN_DOCKER"):
+    for field in ("scorer_base_url", "llm_base_url"):
+        value = getattr(settings, field)
+        setattr(settings, field, value.replace("localhost", "host.docker.internal").replace("127.0.0.1", "host.docker.internal"))

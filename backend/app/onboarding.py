@@ -49,15 +49,43 @@ def generate_profile(url: str, validate_subs: bool = True) -> dict:
         messages=[{"role": "user", "content": PROMPT.format(url=url, text=text)}],
         response_format={"type": "json_object"},
     )
-    profile = json.loads(resp.choices[0].message.content)
-    subs = [s.removeprefix("r/").strip() for s in profile.get("subreddits", [])]
+    raw = json.loads(resp.choices[0].message.content)
+    profile = {
+        "name": _text(raw.get("name")),
+        "description": _text(raw.get("description")),
+        "icp": _text(raw.get("icp")),
+        "pain_points": _strings(raw.get("pain_points")),
+        "keywords": [k.lower() for k in _strings(raw.get("keywords"))],
+        "negative_keywords": [k.lower() for k in _strings(raw.get("negative_keywords"))],
+    }
+    subs = [s.removeprefix("r/").removeprefix("/r/").strip() for s in _strings(raw.get("subreddits"))]
     if validate_subs:
         reddit = Reddit()
+        try:
+            reddit._auth()
+        except httpx.HTTPError as e:
+            raise RuntimeError(f"Reddit login failed, check REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET in .env ({e})")
         subs = [name for s in subs if (name := reddit.subreddit_ok(s))]
     profile["subreddits"] = list(dict.fromkeys(subs))
-    profile["keywords"] = [k.lower().strip() for k in profile.get("keywords", []) if k.strip()]
-    profile["negative_keywords"] = [k.lower().strip() for k in profile.get("negative_keywords", []) if k.strip()]
     return profile
+
+
+def _text(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, dict):
+        return "; ".join(f"{k}: {_text(v)}" for k, v in value.items())
+    if isinstance(value, list):
+        return "; ".join(_text(v) for v in value)
+    return str(value).strip()
+
+
+def _strings(value) -> list[str]:
+    if isinstance(value, str):
+        value = value.split(",")
+    if not isinstance(value, list):
+        return []
+    return [s for s in (_text(v) for v in value) if s]
 
 
 if __name__ == "__main__":

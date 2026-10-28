@@ -3,5 +3,5 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY backend ./backend
-ENV FASTEMBED_CACHE_PATH=/cache/fastembed
+ENV FASTEMBED_CACHE_PATH=/cache/fastembed IN_DOCKER=1
 CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
