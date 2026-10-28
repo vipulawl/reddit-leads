@@ -1,3 +1,4 @@
+import os
 import re
 from functools import lru_cache
 
@@ -28,7 +29,7 @@ def keyword_match(text: str, keywords: list[str], negative: list[str]) -> list[s
 @lru_cache(maxsize=1)
 def _model():
     from fastembed import TextEmbedding
-    return TextEmbedding(EMBED_MODEL)
+    return TextEmbedding(EMBED_MODEL, cache_dir=os.environ.get("FASTEMBED_CACHE_PATH"))
 
 
 def embed(texts: list[str]) -> np.ndarray:

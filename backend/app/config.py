@@ -11,6 +11,11 @@ class Settings(BaseSettings):
     typesafe_api_key: str = ""
     jev_model: str = "jev-latest"
 
+    scorer: str = "auto"
+    scorer_base_url: str = "http://localhost:11434/v1"
+    scorer_api_key: str = "ollama"
+    scorer_model: str = "llama3.2"
+
     llm_api_key: str = ""
     llm_base_url: str = "https://api.openai.com/v1"
     llm_model: str = "gpt-5-mini"

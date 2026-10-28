@@ -1,0 +1,53 @@
+x-backend: &backend
+  build: .
+  env_file: .env
+  environment:
+    DATABASE_URL: postgresql+psycopg://leads:leads@db:5432/leads
+    SCORER_BASE_URL: ${SCORER_BASE_URL:-http://host.docker.internal:11434/v1}
+  volumes:
+    - fastembed:/cache/fastembed
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  depends_on:
+    db:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: leads
+      POSTGRES_PASSWORD: leads
+      POSTGRES_DB: leads
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U leads"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    <<: *backend
+    ports:
+      - "8000:8000"
+
+  worker:
+    <<: *backend
+    command: ["python", "-m", "backend.app.worker"]
+
+  web:
+    build:
+      context: ./web
+      args:
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8000}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  fastembed:
