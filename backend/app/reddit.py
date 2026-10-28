@@ -1,0 +1,86 @@
+import argparse
+import logging
+import time
+from datetime import datetime, timezone
+
+import httpx
+
+from .config import settings
+
+log = logging.getLogger(__name__)
+API = "https://oauth.reddit.com"
+
+
+class Reddit:
+    def __init__(self):
+        self.client = httpx.Client(headers={"User-Agent": settings.reddit_user_agent}, timeout=20)
+        self.token = None
+        self.token_exp = 0.0
+
+    def _auth(self):
+        if self.token and time.time() < self.token_exp - 60:
+            return
+        r = self.client.post(
+            "https://www.reddit.com/api/v1/access_token",
+            auth=(settings.reddit_client_id, settings.reddit_client_secret),
+            data={"grant_type": "client_credentials"},
+        )
+        r.raise_for_status()
+        data = r.json()
+        self.token = data["access_token"]
+        self.token_exp = time.time() + data["expires_in"]
+
+    def get(self, path: str, **params) -> dict:
+        self._auth()
+        r = self.client.get(f"{API}{path}", params={"raw_json": 1, **params},
+                            headers={"Authorization": f"Bearer {self.token}"})
+        remaining = float(r.headers.get("x-ratelimit-remaining", 100))
+        reset = float(r.headers.get("x-ratelimit-reset", 0))
+        if remaining < 5:
+            log.warning("Reddit rate limit low (%s left), sleeping %ss", remaining, reset)
+            time.sleep(reset + 1)
+        r.raise_for_status()
+        return r.json()
+
+    def new_posts(self, subs: list[str], limit: int = 100) -> list[dict]:
+        return [normalize(c) for c in self.get(f"/r/{'+'.join(subs)}/new", limit=limit)["data"]["children"]]
+
+    def new_comments(self, subs: list[str], limit: int = 100) -> list[dict]:
+        return [normalize(c) for c in self.get(f"/r/{'+'.join(subs)}/comments", limit=limit)["data"]["children"]]
+
+    def search(self, query: str, limit: int = 25) -> list[dict]:
+        data = self.get("/search", q=f'"{query}"', sort="new", t="day", limit=limit, type="link")
+        return [normalize(c) for c in data["data"]["children"]]
+
+    def subreddit_ok(self, name: str) -> str | None:
+        try:
+            data = self.get(f"/r/{name}/about")["data"]
+        except httpx.HTTPStatusError:
+            return None
+        if data.get("subreddit_type") != "public" or data.get("over18"):
+            return None
+        return data["display_name"]
+
+
+def normalize(child: dict) -> dict:
+    d = child["data"]
+    is_comment = child["kind"] == "t1"
+    return {
+        "id": d["name"],
+        "kind": "comment" if is_comment else "post",
+        "subreddit": d["subreddit"],
+        "author": d.get("author", "[deleted]"),
+        "title": d.get("link_title" if is_comment else "title", ""),
+        "body": d.get("body" if is_comment else "selftext", "") or "",
+        "permalink": "https://www.reddit.com" + d["permalink"],
+        "posted_at": datetime.fromtimestamp(d["created_utc"], tz=timezone.utc),
+    }
+
+
+if __name__ == "__main__":
+    p = argparse.ArgumentParser()
+    p.add_argument("--sub", default="SaaS")
+    p.add_argument("--limit", type=int, default=5)
+    args = p.parse_args()
+    for item in Reddit().new_posts([args.sub], limit=args.limit):
+        print(f"[{item['subreddit']}] {item['title'][:90]}  {item['permalink']}")
