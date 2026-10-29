@@ -14,7 +14,7 @@ Open source (AGPL-3.0). Self-host it free with your own keys, or use the hosted 
    | 3. Lead scoring | buying-intent level + "is this a vendor promoting themselves?" → 0–100 score. Uses [TypeSafe Jev](https://docs.typesafe.ai) if you have a key, otherwise any OpenAI-compatible LLM (local Ollama by default) | Jev: ~$0.04 / 1M input tokens. Ollama: free |
 4. **Lead inbox:** web dashboard, refreshes every 10s, sorted by score. Open on Reddit, mark replied or skip.
 
-Supports multiple users (email + password accounts, each with their own projects).
+No accounts or login: it's a single-user, self-hosted app. Run it on your own machine or behind your own access control (VPN, basic auth at the proxy) if you put it on a server.
 
 ## Self-host vs hosted
 
@@ -48,7 +48,6 @@ The worker fetches each subreddit **once for all users**, combining subreddits i
 | `TYPESAFE_API_KEY` | [console.typesafe.ai](https://console.typesafe.ai) | no. Without it, scoring uses `SCORER_*` (Ollama by default) |
 | `SCORER_BASE_URL` / `SCORER_API_KEY` / `SCORER_MODEL` | any OpenAI-compatible API. Defaults to local Ollama `llama3.2` | only if there's no Jev key |
 | `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` | OpenAI (default `gpt-5-mini`), OpenRouter, or Ollama | yes, for onboarding |
-| `JWT_SECRET` | any long random string (`openssl rand -hex 32`) | yes |
 
 **Fully free setup:** a Reddit app, no Jev key, with both `SCORER_*` and `LLM_*` pointed at Ollama (`ollama pull llama3.2`). Small local models score less reliably than Jev, so raise the min-score in the dashboard if you see noise.
 
@@ -60,7 +59,7 @@ cp .env.example .env        # fill in keys
 docker compose up -d --build
 ```
 
-Open http://localhost:3000, sign up, and paste your URL.
+Open http://localhost:3000 and paste your URL.
 - Uses Postgres in a container. Ollama on the host is reached via `host.docker.internal`.
 - On a server, set `PUBLIC_API_URL=https://your-api-host` and `CORS_ORIGINS=https://your-web-host` before building.
 
@@ -117,14 +116,14 @@ reddit-leads/
 │   ├── config.py       env settings
 │   ├── db.py           SQLAlchemy engine/session
 │   ├── models.py       User, Project, Lead
-│   ├── auth.py         signup/login, scrypt password hashing, JWT
+│   ├── auth.py         single local user (no login)
 │   ├── main.py         FastAPI routes
 │   ├── reddit.py       Reddit OAuth client (app-only), rate-limit aware
 │   ├── onboarding.py   website → product profile (LLM) + subreddit validation
 │   ├── filters.py      stage 1 keyword match + stage 2 embedding filter
 │   ├── scorer.py       stage 3 scoring: Jev or OpenAI-compatible LLM
 │   └── worker.py       poll → filter → score → save loop
-├── web/                Next.js dashboard (login, projects, lead inbox)
+├── web/                Next.js dashboard (landing page, projects, lead inbox)
 ├── Dockerfile          backend image (api + worker)
 ├── docker-compose.yml  db + api + worker + web
 ├── requirements.txt

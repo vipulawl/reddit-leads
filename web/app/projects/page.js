@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { api, logout } from "@/lib/api";
+import { api } from "@/lib/api";
 
 export default function Projects() {
   const [projects, setProjects] = useState(null);
@@ -30,7 +30,7 @@ export default function Projects() {
     <main>
       <header className="row between">
         <h1>Your projects</h1>
-        <button className="link" onClick={logout}>Log out</button>
+        <a href="/" className="muted small">Home</a>
       </header>
       <form onSubmit={add} className="card row">
         <input placeholder="yourwebsite.com" value={url} onChange={(e) => setUrl(e.target.value)} required />

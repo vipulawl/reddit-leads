@@ -2,12 +2,12 @@ from datetime import datetime
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from . import filters
-from .auth import create_token, current_user, hash_password, verify_password
+from .auth import current_user
 from .config import settings
 from .db import SessionLocal, get_db, init_db
 from .models import Lead, Project, User
@@ -25,11 +25,6 @@ app.add_middleware(
 @app.on_event("startup")
 def startup():
     init_db()
-
-
-class Credentials(BaseModel):
-    email: EmailStr
-    password: str = Field(min_length=8)
 
 
 class ProjectCreate(BaseModel):
@@ -80,29 +75,6 @@ def own_project(db: Session, user: User, project_id: int) -> Project:
 
 def refresh_embedding(p: Project):
     p.profile_embedding = filters.embed([p.profile_text()])[0].tolist()
-
-
-@app.post("/api/auth/signup")
-def signup(body: Credentials, db: Session = Depends(get_db)):
-    if db.scalar(select(User).where(User.email == body.email.lower())):
-        raise HTTPException(400, "Email already registered")
-    user = User(email=body.email.lower(), password_hash=hash_password(body.password))
-    db.add(user)
-    db.commit()
-    return {"token": create_token(user.id), "email": user.email}
-
-
-@app.post("/api/auth/login")
-def login(body: Credentials, db: Session = Depends(get_db)):
-    user = db.scalar(select(User).where(User.email == body.email.lower()))
-    if not user or not verify_password(body.password, user.password_hash):
-        raise HTTPException(401, "Wrong email or password")
-    return {"token": create_token(user.id), "email": user.email}
-
-
-@app.get("/api/me")
-def me(user: User = Depends(current_user)):
-    return {"email": user.email}
 
 
 def build_profile(project_id: int):
