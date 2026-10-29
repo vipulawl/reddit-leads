@@ -9,6 +9,7 @@ from .config import settings
 
 log = logging.getLogger(__name__)
 API = "https://oauth.reddit.com"
+READABLE = {"public", "restricted"}
 
 
 class Reddit:
@@ -58,9 +59,17 @@ class Reddit:
             data = self.get(f"/r/{name}/about")["data"]
         except httpx.HTTPStatusError:
             return None
-        if data.get("subreddit_type") != "public" or data.get("over18"):
+        if data.get("subreddit_type") not in READABLE or data.get("over18"):
             return None
         return data["display_name"]
+
+    def search_subreddits(self, query: str, limit: int = 5, min_subscribers: int = 1000) -> list[tuple[str, int]]:
+        children = self.get("/subreddits/search", q=query, limit=limit)["data"]["children"]
+        return [
+            (d["display_name"], d.get("subscribers") or 0)
+            for d in (c["data"] for c in children)
+            if d.get("subreddit_type") in READABLE and not d.get("over18") and (d.get("subscribers") or 0) >= min_subscribers
+        ]
 
 
 def normalize(child: dict) -> dict:

@@ -7,7 +7,11 @@ export default function ProjectPage({ params }) {
   const [project, setProject] = useState(null);
   const [tab, setTab] = useState("inbox");
 
-  const loadProject = () => api(`/projects/${id}`).then(setProject);
+  const loadProject = () =>
+    api(`/projects/${id}`).then((p) => {
+      setProject(p);
+      if (p.ready && !p.active) setTab("setup");
+    });
 
   useEffect(() => {
     loadProject();
@@ -38,7 +42,13 @@ export default function ProjectPage({ params }) {
       ) : tab === "inbox" ? (
         <Inbox project={project} />
       ) : (
-        <Setup project={project} onSaved={setProject} />
+        <Setup
+          project={project}
+          onSaved={(p) => {
+            setProject(p);
+            if (p.active && !project.active) setTab("inbox");
+          }}
+        />
       )}
     </main>
   );
@@ -120,9 +130,10 @@ function Setup({ project, onSaved }) {
   const [msg, setMsg] = useState("");
   const set = (k) => (e) => setF({ ...f, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value });
 
-  async function save() {
+  async function save(extra = {}) {
     const body = {
       ...f,
+      ...extra,
       pain_points: lines(f.pain_points),
       keywords: lines(f.keywords),
       negative_keywords: lines(f.negative_keywords),
@@ -130,19 +141,32 @@ function Setup({ project, onSaved }) {
       similarity_threshold: +f.similarity_threshold,
       min_score: +f.min_score,
     };
-    onSaved(await api(`/projects/${project.id}`, { method: "PATCH", body }));
+    const saved = await api(`/projects/${project.id}`, { method: "PATCH", body });
+    setF((prev) => ({ ...prev, active: saved.active }));
+    onSaved(saved);
     setMsg("Saved");
     setTimeout(() => setMsg(""), 2000);
   }
 
   async function remove() {
-    if (!confirm("Delete this project and all its leads?")) return;
+    if (!window.confirm("Delete this project and all its leads?")) return;
     await api(`/projects/${project.id}`, { method: "DELETE" });
     window.location.href = "/projects";
   }
 
+  const needsReview = !project.active;
+
   return (
     <div className="card stack">
+      {needsReview && (
+        <div className="banner">
+          <strong>Review what we found</strong>
+          <span className="small">
+            We read {project.url} and picked these keywords and subreddits. Edit anything that's off, then start.
+            Nothing is monitored until you confirm.
+          </span>
+        </div>
+      )}
       <Field label="Name"><input value={f.name} onChange={set("name")} /></Field>
       <Field label="What it does"><textarea rows={2} value={f.description} onChange={set("description")} /></Field>
       <Field label="Ideal customer"><textarea rows={2} value={f.icp} onChange={set("icp")} /></Field>
@@ -159,10 +183,22 @@ function Setup({ project, onSaved }) {
         <Field label={`Min lead score in inbox: ${f.min_score}`}>
           <input type="range" min="0" max="100" step="5" value={f.min_score} onChange={set("min_score")} />
         </Field>
-        <label className="row"><input type="checkbox" checked={f.active} onChange={set("active")} /> Monitoring on</label>
+        {!needsReview && (
+          <label className="row"><input type="checkbox" checked={f.active} onChange={set("active")} /> Monitoring on</label>
+        )}
       </div>
       <div className="row between">
-        <div className="row"><button onClick={save}>Save</button><span className="muted">{msg}</span></div>
+        <div className="row">
+          {needsReview ? (
+            <>
+              <button onClick={() => save({ active: true })}>Looks good — start finding leads</button>
+              <button className="ghost" onClick={() => save()}>Save draft</button>
+            </>
+          ) : (
+            <button onClick={() => save()}>Save</button>
+          )}
+          <span className="muted">{msg}</span>
+        </div>
         <button className="danger" onClick={remove}>Delete project</button>
       </div>
     </div>

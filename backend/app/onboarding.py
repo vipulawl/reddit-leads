@@ -74,6 +74,16 @@ def generate_profile(url: str, validate_subs: bool = True) -> dict:
         except httpx.HTTPError as e:
             raise RuntimeError(f"Reddit login failed, check REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET in .env ({e})")
         subs = [name for s in subs if (name := reddit.subreddit_ok(s))]
+        if len(subs) < 8:
+            found: dict[str, int] = {}
+            for kw in profile["keywords"][:5]:
+                try:
+                    found.update(reddit.search_subreddits(kw))
+                except httpx.HTTPError:
+                    continue
+            known = {s.lower() for s in subs}
+            extra = [n for n, _ in sorted(found.items(), key=lambda x: -x[1]) if n.lower() not in known]
+            subs += extra[: 15 - len(subs)]
         if not subs:
             raise RuntimeError("None of the suggested subreddits exist or are public. Retry, or add subreddits manually in Setup.")
     profile["subreddits"] = list(dict.fromkeys(subs))

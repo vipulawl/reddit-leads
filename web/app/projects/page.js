@@ -45,7 +45,11 @@ export default function Projects() {
               <strong>{p.name}</strong>
               <div className="muted small">{p.ready ? `${p.subreddits.length} subreddits · ${p.keywords.length} keywords` : "Setting up…"}</div>
             </div>
-            {p.lead_count > 0 && <span className="badge">{p.lead_count} new</span>}
+            {p.ready && !p.active ? (
+              <span className="chip">Review setup</span>
+            ) : (
+              p.lead_count > 0 && <span className="badge">{p.lead_count} new</span>
+            )}
           </a>
         ))}
       </div>

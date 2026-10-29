@@ -122,8 +122,9 @@ def build_profile(project_id: int):
         except Exception as e:
             db.rollback()
             p = db.get(Project, project_id)
-            p.description = f"Setup failed: {e}"
-            db.commit()
+            if p:
+                p.description = f"Setup failed: {e}"
+                db.commit()
 
 
 @app.get("/api/projects")
@@ -142,7 +143,7 @@ def create_project(body: ProjectCreate, tasks: BackgroundTasks, user: User = Dep
     url = body.url.strip()
     if not url.startswith("http"):
         url = "https://" + url
-    p = Project(user_id=user.id, url=url, name=url.split("//")[-1].split("/")[0])
+    p = Project(user_id=user.id, url=url, name=url.split("//")[-1].split("/")[0], active=False)
     db.add(p)
     db.commit()
     tasks.add_task(build_profile, p.id)
@@ -155,6 +156,7 @@ def regenerate_project(project_id: int, tasks: BackgroundTasks, user: User = Dep
     p = own_project(db, user, project_id)
     p.description = ""
     p.profile_embedding = None
+    p.active = False
     db.commit()
     tasks.add_task(build_profile, p.id)
     return project_out(p)
