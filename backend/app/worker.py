@@ -12,7 +12,7 @@ from . import filters
 from .db import SessionLocal, init_db
 from .models import Lead, Project
 from .reddit import Reddit
-from .scorer import score_item
+from .scorer import backend as scorer_backend, score_item
 
 log = logging.getLogger("worker")
 SUBS_PER_REQUEST = 50
@@ -79,6 +79,8 @@ class Worker:
             self.search_cursor += 1
             try:
                 for item in self.reddit.search(kw):
+                    if item["subreddit"].startswith("u_"):
+                        continue
                     if self.seen.add(f"s:{project.id}:{item['id']}"):
                         if item["posted_at"] >= cutoff:
                             out.append((item, [project]))
@@ -142,7 +144,7 @@ class Worker:
             ))
             log.info("lead p%d score=%d sim=%.2f %s", p.id, res["score"], sim, item["permalink"])
         db.commit()
-        log.info("scored %d items, ~%d Jev input tokens", sum(r is not None for r in results), tokens)
+        log.info("scored %d items with %s, ~%d input tokens", sum(r is not None for r in results), scorer_backend(), tokens)
 
 
 def main():
@@ -154,6 +156,7 @@ def main():
     p.add_argument("--dry-run", action="store_true")
     args = p.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     init_db()
     worker = Worker(args)
     while True:

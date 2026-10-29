@@ -44,12 +44,20 @@ def fetch_site_text(url: str, max_chars: int = 8000) -> str:
 def generate_profile(url: str, validate_subs: bool = True) -> dict:
     text = fetch_site_text(url)
     client = OpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
-    resp = client.chat.completions.create(
-        model=settings.llm_model,
-        messages=[{"role": "user", "content": PROMPT.format(url=url, text=text)}],
-        response_format={"type": "json_object"},
-    )
-    raw = json.loads(resp.choices[0].message.content)
+    for _ in range(3):
+        resp = client.chat.completions.create(
+            model=settings.llm_model,
+            messages=[{"role": "user", "content": PROMPT.format(url=url, text=text)}],
+            response_format={"type": "json_object"},
+        )
+        try:
+            raw = json.loads(resp.choices[0].message.content)
+        except json.JSONDecodeError:
+            continue
+        if _strings(raw.get("keywords")) and _strings(raw.get("subreddits")):
+            break
+    else:
+        raise RuntimeError(f"{settings.llm_model} didn't return keywords and subreddits after 3 tries. Try a stronger LLM_MODEL.")
     profile = {
         "name": _text(raw.get("name")),
         "description": _text(raw.get("description")),
@@ -66,6 +74,8 @@ def generate_profile(url: str, validate_subs: bool = True) -> dict:
         except httpx.HTTPError as e:
             raise RuntimeError(f"Reddit login failed, check REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET in .env ({e})")
         subs = [name for s in subs if (name := reddit.subreddit_ok(s))]
+        if not subs:
+            raise RuntimeError("None of the suggested subreddits exist or are public. Retry, or add subreddits manually in Setup.")
     profile["subreddits"] = list(dict.fromkeys(subs))
     return profile
 
