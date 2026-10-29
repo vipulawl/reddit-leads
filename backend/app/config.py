@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     reddit_client_id: str = ""
     reddit_client_secret: str = ""
     reddit_user_agent: str = "web:reddit-leads:v0.1"
+    reddit_refresh_token: str = ""
 
     typesafe_api_key: str = ""
     jev_model: str = "jev-latest"

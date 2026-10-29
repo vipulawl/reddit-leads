@@ -23,7 +23,8 @@ class Reddit:
         r = self.client.post(
             "https://www.reddit.com/api/v1/access_token",
             auth=(settings.reddit_client_id, settings.reddit_client_secret),
-            data={"grant_type": "client_credentials"},
+            data={"grant_type": "refresh_token", "refresh_token": settings.reddit_refresh_token}
+            if settings.reddit_refresh_token else {"grant_type": "client_credentials"},
         )
         r.raise_for_status()
         data = r.json()
