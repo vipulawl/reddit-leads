@@ -14,6 +14,12 @@ main.landing { max-width: 900px; }
 .hero .lead { font-size: 17px; margin: 0; max-width: 640px; }
 .step { gap: 6px; }
 .step p { margin: 0; }
+.plans { margin-top: 56px; }
+.plans h2 { font-size: 22px; margin: 0; }
+.plans > p { margin: 0; max-width: 640px; }
+.plan { gap: 10px; }
+.plan .price { font-size: 18px; font-weight: 700; margin-top: 2px; }
+.plan ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
 h1 { font-size: 24px; margin: 8px 0 16px; }
 a { color: inherit; text-decoration: none; }
 .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }

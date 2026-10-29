@@ -8,6 +8,32 @@ const STEPS = [
   ["Get leads", "New posts and comments are checked about every minute, filtered, and scored for buying intent. The best ones land in your inbox."],
 ];
 
+const PLANS = [
+  {
+    name: "Self-host",
+    price: "Free",
+    note: "You pay only your own API usage, which can be $0",
+    points: [
+      "Open source (AGPL-3.0), runs on your machine or server",
+      "Bring your own Reddit app plus Jev or any OpenAI-compatible LLM",
+      "Fully free option: Ollama for both onboarding and scoring",
+      "Runs while your machine is on; you handle updates",
+    ],
+    cta: { label: "View on GitHub", href: "https://github.com/vipulawl/reddit-leads" },
+  },
+  {
+    name: "Hosted",
+    price: "Paid plan · coming soon",
+    note: "Nothing to set up",
+    points: [
+      "No API keys, no Docker, no Reddit app",
+      "Runs 24/7 on our servers, so you never miss a lead",
+      "Reddit API access handled for you",
+      "Automatic updates, nothing to maintain",
+    ],
+  },
+];
+
 export default function Home() {
   const [url, setUrl] = useState("");
   const [error, setError] = useState("");
@@ -59,6 +85,29 @@ export default function Home() {
             <p className="muted small">{text}</p>
           </div>
         ))}
+      </section>
+
+      <section className="stack plans">
+        <h2>Self-host or hosted?</h2>
+        <p className="muted">
+          reddit-leads is open source. If you&apos;re seeing this on localhost, you&apos;re already self-hosting.
+          Pick self-host to stay free and keep everything on your machine, or hosted if you&apos;d rather not manage keys and servers.
+        </p>
+        <div className="grid">
+          {PLANS.map((p) => (
+            <div key={p.name} className="card stack plan">
+              <div>
+                <strong>{p.name}</strong>
+                <div className="price">{p.price}</div>
+                <div className="muted small">{p.note}</div>
+              </div>
+              <ul className="small">
+                {p.points.map((pt) => <li key={pt}>{pt}</li>)}
+              </ul>
+              {p.cta && <a href={p.cta.href} target="_blank" rel="noreferrer" className="muted small">{p.cta.label} →</a>}
+            </div>
+          ))}
+        </div>
       </section>
     </main>
   );
