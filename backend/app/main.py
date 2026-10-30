@@ -39,6 +39,7 @@ class ProjectUpdate(BaseModel):
     keywords: list[str] | None = None
     negative_keywords: list[str] | None = None
     subreddits: list[str] | None = None
+    competitors: list[str] | None = None
     similarity_threshold: float | None = Field(None, ge=0, le=1)
     min_score: int | None = Field(None, ge=0, le=100)
     active: bool | None = None
@@ -52,7 +53,7 @@ def project_out(p: Project, lead_count: int = 0) -> dict:
     return {
         "id": p.id, "url": p.url, "name": p.name, "description": p.description, "icp": p.icp,
         "pain_points": p.pain_points, "keywords": p.keywords, "negative_keywords": p.negative_keywords,
-        "subreddits": p.subreddits, "similarity_threshold": p.similarity_threshold, "min_score": p.min_score,
+        "subreddits": p.subreddits, "competitors": p.competitors or [], "similarity_threshold": p.similarity_threshold, "min_score": p.min_score,
         "active": p.active, "ready": p.profile_embedding is not None, "lead_count": lead_count,
     }
 
@@ -62,8 +63,12 @@ def lead_out(l: Lead) -> dict:
         "id": l.id, "kind": l.kind, "subreddit": l.subreddit, "author": l.author, "title": l.title,
         "body": l.body, "permalink": l.permalink, "matched_keywords": l.matched_keywords,
         "similarity": round(l.similarity, 3), "vendor_prob": round(l.vendor_prob, 3), "score": l.score,
+        "intent": l.intent or "", "reason": l.reason or "",
         "status": l.status, "posted_at": l.posted_at.isoformat(), "created_at": l.created_at.isoformat(),
     }
+
+
+LEAD_INTENTS = ("buying", "pain", "showcase")
 
 
 def own_project(db: Session, user: User, project_id: int) -> Project:
@@ -89,6 +94,7 @@ def build_profile(project_id: int):
             p.keywords = prof["keywords"]
             p.negative_keywords = prof["negative_keywords"]
             p.subreddits = prof["subreddits"]
+            p.competitors = prof["competitors"]
             refresh_embedding(p)
             db.commit()
         except Exception as e:
@@ -103,7 +109,8 @@ def build_profile(project_id: int):
 def list_projects(user: User = Depends(current_user), db: Session = Depends(get_db)):
     counts = dict(db.execute(
         select(Lead.project_id, func.count()).join(Project)
-        .where(Project.user_id == user.id, Lead.score >= Project.min_score, Lead.status == "new")
+        .where(Project.user_id == user.id, Lead.score >= Project.min_score, Lead.status == "new",
+               Lead.intent.in_(LEAD_INTENTS))
         .group_by(Lead.project_id)
     ).all())
     return [project_out(p, counts.get(p.id, 0)) for p in user.projects]
@@ -167,15 +174,32 @@ def delete_project(project_id: int, user: User = Depends(current_user), db: Sess
 
 
 @app.get("/api/projects/{project_id}/leads")
-def list_leads(project_id: int, status: str = "new", min_score: int | None = None, since: datetime | None = None,
-               limit: int = 100, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def list_leads(project_id: int, status: str = "new", intent: str = "leads", min_score: int | None = None,
+               since: datetime | None = None, limit: int = 100, user: User = Depends(current_user),
+               db: Session = Depends(get_db)):
     p = own_project(db, user, project_id)
     q = select(Lead).where(Lead.project_id == p.id, Lead.score >= (p.min_score if min_score is None else min_score))
     if status != "all":
         q = q.where(Lead.status == status)
+    if intent == "leads":
+        q = q.where(Lead.intent.in_(LEAD_INTENTS))
+    elif intent != "all":
+        q = q.where(Lead.intent.in_(intent.split(",")))
     if since:
         q = q.where(Lead.created_at > since)
     return [lead_out(l) for l in db.scalars(q.order_by(Lead.created_at.desc()).limit(min(limit, 500)))]
+
+
+@app.get("/api/projects/{project_id}/lead-counts")
+def lead_counts(project_id: int, status: str = "new", min_score: int | None = None,
+                user: User = Depends(current_user), db: Session = Depends(get_db)):
+    p = own_project(db, user, project_id)
+    q = (select(Lead.intent, func.count()).where(
+        Lead.project_id == p.id, Lead.score >= (p.min_score if min_score is None else min_score))
+        .group_by(Lead.intent))
+    if status != "all":
+        q = q.where(Lead.status == status)
+    return dict(db.execute(q).all())
 
 
 @app.patch("/api/leads/{lead_id}")

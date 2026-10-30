@@ -50,16 +50,18 @@ class Reddit:
     def new_comments(self, subs: list[str], limit: int = 100) -> list[dict]:
         return [normalize(c) for c in self.get(f"/r/{'+'.join(subs)}/comments", limit=limit)["data"]["children"]]
 
-    def search(self, query: str, limit: int = 25) -> list[dict]:
-        data = self.get("/search", q=f'"{query}"', sort="new", t="day", limit=limit, type="link")
+    def search(self, query: str, limit: int = 25, t: str = "day", sort: str = "new") -> list[dict]:
+        data = self.get("/search", q=f'"{query}"', sort=sort, t=t, limit=limit, type="link")
         return [normalize(c) for c in data["data"]["children"]]
 
-    def subreddit_ok(self, name: str) -> str | None:
+    def subreddit_ok(self, name: str, min_subscribers: int = 0) -> str | None:
         try:
             data = self.get(f"/r/{name}/about")["data"]
-        except httpx.HTTPStatusError:
+        except (httpx.HTTPStatusError, KeyError):
             return None
         if data.get("subreddit_type") not in READABLE or data.get("over18"):
+            return None
+        if (data.get("subscribers") or 0) < min_subscribers:
             return None
         return data["display_name"]
 

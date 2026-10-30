@@ -37,7 +37,7 @@ class Worker:
     def __init__(self, args):
         self.args = args
         self.reddit = Reddit()
-        self.http = httpx.Client(timeout=20)
+        self.http = httpx.Client(timeout=120)
         self.seen = SeenCache()
         self.search_cursor = 0
 
@@ -94,7 +94,7 @@ class Worker:
         for item, targets in items:
             text = filters.item_text(item)
             for p in targets:
-                if hits := filters.keyword_match(text, p.keywords, p.negative_keywords):
+                if hits := filters.keyword_match(text, p.keywords, p.negative_keywords, p.competitors or []):
                     stage1.append((item, p, hits))
         unique = {it["id"]: filters.item_text(it) for it, _, _ in stage1}
         ids = list(unique)
@@ -124,9 +124,12 @@ class Worker:
         def run(c):
             item, p, _, _ = c
             try:
-                return score_item(item, {"name": p.name, "description": p.description, "ideal_customer": p.icp}, self.http)
+                return score_item(item, {
+                    "name": p.name, "description": p.description, "ideal_customer": p.icp,
+                    "problems_solved": p.pain_points, "competitors": p.competitors,
+                }, self.http)
             except (httpx.HTTPError, KeyError, ValueError) as e:
-                log.warning("Jev scoring failed for %s: %s", item["id"], e)
+                log.warning("scoring failed for %s: %s", item["id"], e)
                 return None
 
         with ThreadPoolExecutor(max_workers=8) as pool:
@@ -140,9 +143,10 @@ class Worker:
                 project_id=p.id, reddit_id=item["id"], kind=item["kind"], subreddit=item["subreddit"],
                 author=item["author"], title=item["title"], body=item["body"][:5000], permalink=item["permalink"],
                 matched_keywords=hits, similarity=sim, intent_level=res["intent_level"],
-                vendor_prob=res["vendor_prob"], score=res["score"], posted_at=item["posted_at"],
+                vendor_prob=res["vendor_prob"], score=res["score"], intent=res["intent"], reason=res["reason"],
+                posted_at=item["posted_at"],
             ))
-            log.info("lead p%d score=%d sim=%.2f %s", p.id, res["score"], sim, item["permalink"])
+            log.info("lead p%d %s fit=%d sim=%.2f %s", p.id, res["intent"], res["score"], sim, item["permalink"])
         db.commit()
         log.info("scored %d items with %s, ~%d input tokens", sum(r is not None for r in results), scorer_backend(), tokens)
 
