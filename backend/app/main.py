@@ -1,5 +1,6 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
+import httpx
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -12,6 +13,8 @@ from .config import settings
 from .db import SessionLocal, get_db, init_db
 from .models import Lead, Project, User
 from .onboarding import generate_profile
+from .reddit import Reddit
+from .threads import refresh_replies
 
 app = FastAPI(title="reddit-leads")
 app.add_middleware(
@@ -58,13 +61,26 @@ def project_out(p: Project, lead_count: int = 0) -> dict:
     }
 
 
+INTENT_RANK = {"buying": 300, "pain": 200, "showcase": 100, "discussion": 0, "irrelevant": -100}
+
+
+def priority(l: Lead) -> int:
+    base = INTENT_RANK.get(l.intent or "", -100) + l.score
+    if l.intent not in LEAD_INTENTS[:2]:
+        return base
+    replies = l.num_comments or 0
+    days_old = (datetime.now(timezone.utc) - l.posted_at).days
+    return base - min(days_old * 10, 150) + (40 if l.urgent else 0) + (40 if replies == 0 else 20 if replies <= 3 else 0) - (40 if l.answered else 0)
+
+
 def lead_out(l: Lead) -> dict:
     return {
         "id": l.id, "kind": l.kind, "subreddit": l.subreddit, "author": l.author, "title": l.title,
         "body": l.body, "permalink": l.permalink, "matched_keywords": l.matched_keywords,
         "similarity": round(l.similarity, 3), "vendor_prob": round(l.vendor_prob, 3), "score": l.score,
-        "intent": l.intent or "", "reason": l.reason or "",
-        "status": l.status, "posted_at": l.posted_at.isoformat(), "created_at": l.created_at.isoformat(),
+        "intent": l.intent or "", "reason": l.reason or "", "urgent": bool(l.urgent), "answered": bool(l.answered),
+        "num_comments": l.num_comments or 0, "replies": l.replies or [], "matched_comments": l.matched_comments or [],
+        "priority": priority(l), "status": l.status, "posted_at": l.posted_at.isoformat(), "created_at": l.created_at.isoformat(),
     }
 
 
@@ -175,7 +191,7 @@ def delete_project(project_id: int, user: User = Depends(current_user), db: Sess
 
 @app.get("/api/projects/{project_id}/leads")
 def list_leads(project_id: int, status: str = "new", intent: str = "leads", min_score: int | None = None,
-               since: datetime | None = None, limit: int = 100, user: User = Depends(current_user),
+               since: datetime | None = None, sort: str = "best", limit: int = 100, user: User = Depends(current_user),
                db: Session = Depends(get_db)):
     p = own_project(db, user, project_id)
     q = select(Lead).where(Lead.project_id == p.id, Lead.score >= (p.min_score if min_score is None else min_score))
@@ -187,7 +203,10 @@ def list_leads(project_id: int, status: str = "new", intent: str = "leads", min_
         q = q.where(Lead.intent.in_(intent.split(",")))
     if since:
         q = q.where(Lead.created_at > since)
-    return [lead_out(l) for l in db.scalars(q.order_by(Lead.created_at.desc()).limit(min(limit, 500)))]
+    leads = [lead_out(l) for l in db.scalars(q.order_by(Lead.created_at.desc()).limit(500))]
+    if sort == "best":
+        leads.sort(key=lambda l: (l["priority"], l["posted_at"]), reverse=True)
+    return leads[: min(limit, 500)]
 
 
 @app.get("/api/projects/{project_id}/lead-counts")
@@ -200,6 +219,22 @@ def lead_counts(project_id: int, status: str = "new", min_score: int | None = No
     if status != "all":
         q = q.where(Lead.status == status)
     return dict(db.execute(q).all())
+
+
+@app.post("/api/leads/{lead_id}/refresh")
+def refresh_lead(lead_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    lead = db.get(Lead, lead_id)
+    if not lead:
+        raise HTTPException(404, "Lead not found")
+    own_project(db, user, lead.project_id)
+    if not lead.reddit_id.startswith("t3_"):
+        raise HTTPException(400, "Only thread leads can be refreshed")
+    try:
+        refresh_replies(Reddit(), lead)
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"Reddit request failed: {e}")
+    db.commit()
+    return lead_out(lead)
 
 
 @app.patch("/api/leads/{lead_id}")

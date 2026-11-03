@@ -28,7 +28,11 @@ def init_db():
 
 ADDED_COLUMNS = {
     "projects": {"competitors": "JSON DEFAULT '[]'"},
-    "leads": {"intent": "VARCHAR(20) DEFAULT ''", "reason": "TEXT DEFAULT ''"},
+    "leads": {
+        "intent": "VARCHAR(20) DEFAULT ''", "reason": "TEXT DEFAULT ''",
+        "urgent": "BOOLEAN DEFAULT FALSE", "answered": "BOOLEAN DEFAULT FALSE", "num_comments": "INTEGER DEFAULT 0",
+        "replies": "JSON DEFAULT '[]'", "matched_comments": "JSON DEFAULT '[]'",
+    },
 }
 
 

@@ -54,6 +54,21 @@ class Reddit:
         data = self.get("/search", q=f'"{query}"', sort=sort, t=t, limit=limit, type="link")
         return [normalize(c) for c in data["data"]["children"]]
 
+    def thread(self, post_id: str, limit: int = 15) -> tuple[dict, list[dict]]:
+        post_listing, comment_listing = self.get(f"/comments/{post_id.removeprefix('t3_')}", limit=limit, depth=1, sort="top")
+        post = normalize(post_listing["data"]["children"][0])
+        comments = [
+            c for c in (normalize(c) for c in comment_listing["data"]["children"] if c["kind"] == "t1")
+            if c["author"] not in ("AutoModerator", "[deleted]") and c["body"] not in ("[removed]", "[deleted]")
+        ]
+        return post, comments
+
+    def info(self, ids: list[str]) -> list[dict]:
+        out = []
+        for i in range(0, len(ids), 100):
+            out += [normalize(c) for c in self.get("/api/info", id=",".join(ids[i:i + 100]))["data"]["children"]]
+        return out
+
     def subreddit_ok(self, name: str, min_subscribers: int = 0) -> str | None:
         try:
             data = self.get(f"/r/{name}/about")["data"]
@@ -86,6 +101,10 @@ def normalize(child: dict) -> dict:
         "body": d.get("body" if is_comment else "selftext", "") or "",
         "permalink": "https://www.reddit.com" + d["permalink"],
         "posted_at": datetime.fromtimestamp(d["created_utc"], tz=timezone.utc),
+        "post_id": d.get("link_id") if is_comment else d["name"],
+        "num_comments": d.get("num_comments", 0),
+        "score": d.get("score", 0),
+        "removed": d.get("author") == "[deleted]" or bool(d.get("removed_by_category")),
     }
 
 

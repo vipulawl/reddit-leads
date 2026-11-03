@@ -12,7 +12,8 @@ from . import filters
 from .db import SessionLocal, init_db
 from .models import Lead, Project
 from .reddit import Reddit
-from .scorer import backend as scorer_backend, score_item
+from .scorer import backend as scorer_backend
+from .threads import build_lead, comment_out, merge_matches
 
 log = logging.getLogger("worker")
 SUBS_PER_REQUEST = 50
@@ -40,6 +41,7 @@ class Worker:
         self.http = httpx.Client(timeout=120)
         self.seen = SeenCache()
         self.search_cursor = 0
+        self.cycles = 0
 
     def cycle(self):
         with SessionLocal() as db:
@@ -50,6 +52,9 @@ class Worker:
             items = self.fetch(projects)
             candidates = self.filter(items, projects)
             self.score_and_save(db, candidates)
+            self.cycles += 1
+            if self.cycles % self.args.refresh_every == 0:
+                self.refresh_counts(db)
 
     def fetch(self, projects: list[Project]) -> list[tuple[dict, list[Project]]]:
         by_sub: dict[str, list[Project]] = {}
@@ -108,47 +113,77 @@ class Worker:
         return stage2
 
     def score_and_save(self, db, candidates):
-        fresh = [
-            c for c in candidates
-            if not db.scalar(select(Lead.id).where(Lead.project_id == c[1].id, Lead.reddit_id == c[0]["id"]))
-        ]
-        fresh.sort(key=lambda c: c[3], reverse=True)
-        if len(fresh) > self.args.max_score_per_cycle:
-            log.warning("capping Jev calls at %d (had %d)", self.args.max_score_per_cycle, len(fresh))
-            fresh = fresh[: self.args.max_score_per_cycle]
+        groups: dict[tuple[int, str], dict] = {}
+        for item, p, hits, sim in candidates:
+            g = groups.setdefault((p.id, item["post_id"]), {"project": p, "matched": [], "hits": set(), "sim": 0.0})
+            if item["kind"] == "comment":
+                g["matched"].append(comment_out(item, max_chars=1500))
+            g["hits"].update(hits)
+            g["sim"] = max(g["sim"], sim)
+
+        new = []
+        for (project_id, post_id), g in groups.items():
+            lead = db.scalar(select(Lead).where(Lead.project_id == project_id, Lead.reddit_id == post_id))
+            if lead:
+                merge_matches(lead, g["matched"], g["hits"])
+            else:
+                new.append((post_id, g))
+        db.commit()
+
+        new.sort(key=lambda x: x[1]["sim"], reverse=True)
+        if len(new) > self.args.max_score_per_cycle:
+            log.warning("capping scoring at %d threads (had %d)", self.args.max_score_per_cycle, len(new))
+            new = new[: self.args.max_score_per_cycle]
         if self.args.dry_run:
-            for item, p, hits, sim in fresh:
-                log.info("[dry-run] would score p%d sim=%.2f %s | %s", p.id, sim, hits, item["title"][:80])
+            for post_id, g in new:
+                log.info("[dry-run] would score p%d thread %s sim=%.2f %s", g["project"].id, post_id, g["sim"], sorted(g["hits"]))
             return
 
-        def run(c):
-            item, p, _, _ = c
+        def run(entry):
+            post_id, g = entry
             try:
-                return score_item(item, {
-                    "name": p.name, "description": p.description, "ideal_customer": p.icp,
-                    "problems_solved": p.pain_points, "competitors": p.competitors,
-                }, self.http)
-            except (httpx.HTTPError, KeyError, ValueError) as e:
-                log.warning("scoring failed for %s: %s", item["id"], e)
-                return None
+                return build_lead(self.reddit, self.http, g["project"], post_id, g["matched"], g["hits"], g["sim"])
+            except (httpx.HTTPError, KeyError, ValueError, IndexError) as e:
+                log.warning("scoring failed for thread %s: %s", post_id, e)
+                return None, {}
 
-        with ThreadPoolExecutor(max_workers=8) as pool:
-            results = list(pool.map(run, fresh))
+        with ThreadPoolExecutor(max_workers=self.args.score_workers) as pool:
+            results = list(pool.map(run, new))
         tokens = 0
-        for (item, p, hits, sim), res in zip(fresh, results):
-            if res is None:
+        for lead, usage in results:
+            if lead is None:
                 continue
-            tokens += res["usage"].get("input_tokens", 0)
-            db.add(Lead(
-                project_id=p.id, reddit_id=item["id"], kind=item["kind"], subreddit=item["subreddit"],
-                author=item["author"], title=item["title"], body=item["body"][:5000], permalink=item["permalink"],
-                matched_keywords=hits, similarity=sim, intent_level=res["intent_level"],
-                vendor_prob=res["vendor_prob"], score=res["score"], intent=res["intent"], reason=res["reason"],
-                posted_at=item["posted_at"],
-            ))
-            log.info("lead p%d %s fit=%d sim=%.2f %s", p.id, res["intent"], res["score"], sim, item["permalink"])
+            tokens += usage.get("input_tokens", 0)
+            db.add(lead)
+            log.info("lead p%d %s fit=%d replies=%d%s %s", lead.project_id, lead.intent, lead.score, lead.num_comments,
+                     " urgent" if lead.urgent else "", lead.permalink)
         db.commit()
-        log.info("scored %d items with %s, ~%d input tokens", sum(r is not None for r in results), scorer_backend(), tokens)
+        log.info("scored %d threads with %s, ~%d input tokens", sum(l is not None for l, _ in results), scorer_backend(), tokens)
+
+    def refresh_counts(self, db):
+        since = datetime.now(timezone.utc) - timedelta(days=3)
+        leads = db.scalars(select(Lead).where(Lead.status == "new", Lead.posted_at >= since,
+                                              Lead.reddit_id.like("t3_%")).limit(500)).all()
+        if not leads:
+            return
+        by_id = {l.reddit_id: l for l in leads}
+        try:
+            fresh = self.reddit.info(list(by_id))
+        except httpx.HTTPError as e:
+            log.warning("reply count refresh failed: %s", e)
+            return
+        removed = 0
+        for item in fresh:
+            lead = by_id.get(item["id"])
+            if not lead:
+                continue
+            if item["removed"]:
+                db.delete(lead)
+                removed += 1
+            else:
+                lead.num_comments = item["num_comments"]
+        db.commit()
+        log.info("refreshed reply counts for %d leads, removed %d deleted on Reddit", len(fresh), removed)
 
 
 def main():
@@ -156,7 +191,9 @@ def main():
     p.add_argument("--once", action="store_true")
     p.add_argument("--interval", type=int, default=60)
     p.add_argument("--searches-per-cycle", type=int, default=5)
-    p.add_argument("--max-score-per-cycle", type=int, default=50)
+    p.add_argument("--max-score-per-cycle", type=int, default=50, help="max new threads scored per cycle")
+    p.add_argument("--score-workers", type=int, default=4, help="parallel thread fetch + scoring calls")
+    p.add_argument("--refresh-every", type=int, default=5, help="refresh reply counts every N cycles")
     p.add_argument("--dry-run", action="store_true")
     args = p.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")

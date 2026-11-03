@@ -11,8 +11,8 @@ Open source (AGPL-3.0). Self-host it free with your own keys, or use the hosted 
    |---|---|---|
    | 1. Keyword match | exact phrase (or all its words in one sentence), no excluded keyword. Competitor names only count next to switching words ("alternative", "vs", "instead of"…) | free |
    | 2. Embedding filter | local `bge-small` embedding, cosine similarity to the project profile ≥ threshold | free (CPU, ms) |
-   | 3. Intent | yes/no questions about the author (on topic? promoting their own thing? asking for a tool? has the problem?) → a label, a 0–100 fit score, and a one-line reason. Uses [TypeSafe Jev](https://docs.typesafe.ai) if you have a key, otherwise any OpenAI-compatible LLM (local Ollama by default) | Jev: ~$0.04 / 1M input tokens. Ollama: free |
-4. **Lead inbox:** filter by label, newest first, refreshes every 10s. Open on Reddit, mark replied or skip.
+   | 3. Intent | matches are grouped by thread (a matching comment pulls in its parent post), and each thread is judged once on the **original poster**, with its top replies as context. Self-promotion is caught by free text patterns first ("I built", "I work at", "disclosure", "N tools" listicles, webinars). Then yes/no questions: on topic? promoting? asking for a tool? has a specific problem? urgent? already answered by a reply? → a label, a 0–100 fit score, and a one-line reason. Uses [TypeSafe Jev](https://docs.typesafe.ai) if you have a key, otherwise any OpenAI-compatible LLM (local Ollama by default) | Jev: ~$0.04 / 1M input tokens. Ollama: free |
+4. **Lead inbox:** one card per thread: the post on the left, replies on the right (comments that matched your keywords are outlined). Sorted best first: buyers before people with a problem, then fit, with a boost for unanswered and urgent threads and a penalty for already-answered and older ones. Filters for label, unanswered, burning problem, and not answered well. Reply counts refresh every few minutes; threads deleted on Reddit are removed.
 
    | Label | Meaning |
    |---|---|
@@ -101,8 +101,20 @@ python -m backend.app.onboarding https://example.com                      # prof
 | `--once` | off | run one poll cycle and exit |
 | `--interval` | `60` | seconds between cycles |
 | `--searches-per-cycle` | `5` | Reddit-wide keyword searches per cycle (round-robin across all projects) |
-| `--max-score-per-cycle` | `50` | cap on scoring calls per cycle (cost guard) |
+| `--max-score-per-cycle` | `50` | cap on new threads scored per cycle (cost guard) |
+| `--score-workers` | `4` | parallel thread fetch + scoring calls (local Ollama runs them one at a time anyway) |
+| `--refresh-every` | `5` | refresh reply counts every N cycles (1 Reddit call per 100 leads) |
 | `--dry-run` | off | run stages 1–2, log what would be scored, skip scoring and don't save leads |
+
+Threads older than 7 days are not turned into new leads.
+
+**Re-label existing leads** after changing the prompt or model (one LLM call per thread, keeps replied/skipped status):
+
+```zsh
+python -m backend.app.rescore --project 7 --limit 5   # try a few first
+python -m backend.app.rescore --project 7             # all threads
+python -m backend.app.rescore --dry-run               # just count
+```
 
 Per-project settings, editable in the dashboard: keywords, excluded keywords, subreddits, similarity threshold (default `0.55`), and minimum lead score (default `60`).
 
@@ -112,11 +124,20 @@ Per-project settings, editable in the dashboard: keywords, excluded keywords, su
 |---|---|---|
 | Reddit API | free tier is ~100 req/min per client ID. Each cycle uses 2 requests per 50 subreddits + `--searches-per-cycle` | $0 for personal use. Commercial use needs Reddit's approval |
 | Embeddings | local `BAAI/bge-small-en-v1.5` (~65MB download on first run) | $0 |
-| Scoring: Jev | only posts that pass stages 1–2, about 500 tokens each | ≈ $0.50/month per active project |
-| Scoring: Ollama | runs locally, ~1.1k tokens per post | $0 (needs a machine that can run a 3B model) |
+| Thread fetch | 1 Reddit call per new thread that passes stages 1–2 | free (counts toward Reddit's rate limit) |
+| Scoring: Jev | once per thread, ~1.5k tokens with replies | ≈ $0.50/month per active project |
+| Scoring: `gpt-4o-mini` | once per thread, ~1.5k tokens in, ~100 out | ≈ $0.0003/thread, ~$1–3/month at 100–300 threads/day |
+| Scoring: Ollama | runs locally, ~1.5k tokens per thread | $0 (needs a machine that can run a 3B model) |
 | Onboarding LLM | one call per project, ~5k tokens, plus ~35 Reddit searches | < $0.01 with `gpt-5-mini`, $0 with Ollama |
 
-**Model quality:** `llama3.2` (3B) labels intent well enough (7/8 on a hand-labelled set), but onboarding with it gives generic keywords and misses competitors. If you only spend money in one place, use `gpt-5-mini` for `LLM_*` (onboarding, one call per project) and keep scoring on Ollama.
+**Model quality** (18 real threads, hand-labelled by what the original poster wants):
+
+| Scorer | Correct label | Real leads kept | Non-leads shown as leads |
+|---|---|---|---|
+| `gpt-4o-mini` | 17/18 | 6/6 | 1 |
+| `llama3.2` (3B) | 9/18 | 5/6 | 5 |
+
+Onboarding with `llama3.2` also gives generic keywords and misses competitors. For good results use an OpenAI model for both `LLM_*` (onboarding) and `SCORER_*` (labelling); together that's a few dollars a month.
 
 ## File structure
 
@@ -132,7 +153,9 @@ reddit-leads/
 │   ├── onboarding.py   website → product profile (LLM), checked against Reddit search
 │   ├── filters.py      stage 1 keyword match + stage 2 embedding filter
 │   ├── scorer.py       stage 3 intent label + fit: Jev or OpenAI-compatible LLM
-│   └── worker.py       poll → filter → score → save loop
+│   ├── threads.py      thread → lead: fetch post + replies, score, store
+│   ├── rescore.py      re-label existing leads, one per thread
+│   └── worker.py       poll → filter → group by thread → score → save loop
 ├── web/                Next.js dashboard (landing page, projects, lead inbox)
 ├── Dockerfile          backend image (api + worker)
 ├── docker-compose.yml  db + api + worker + web

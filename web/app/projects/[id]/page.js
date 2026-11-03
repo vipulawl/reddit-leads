@@ -62,16 +62,35 @@ const INTENTS = {
 };
 const LEAD_TABS = ["buying", "pain", "showcase"];
 
+function opportunity(l) {
+  if (!["buying", "pain"].includes(l.intent)) return [];
+  const tags = [];
+  if (l.num_comments === 0) tags.push(["Unanswered", "opp-hot"]);
+  else if (l.num_comments <= 3) tags.push([`Only ${l.num_comments} ${l.num_comments === 1 ? "reply" : "replies"}`, "opp-warm"]);
+  if (l.urgent) tags.push(["Burning problem", "opp-hot"]);
+  if (l.answered) tags.push(["Already answered", "opp-muted"]);
+  return tags;
+}
+
+function hint(l) {
+  if (l.status !== "new" || !INTENTS[l.intent]) return "";
+  if (["buying", "pain"].includes(l.intent) && l.num_comments === 0) return "Nobody has replied yet. Be the first helpful answer.";
+  if (l.answered) return "Others already recommended tools. Reply only if you add something they missed.";
+  return INTENTS[l.intent].hint;
+}
+
 function Inbox({ project }) {
   const [leads, setLeads] = useState([]);
   const [counts, setCounts] = useState({});
   const [status, setStatus] = useState("new");
   const [intent, setIntent] = useState("leads");
   const [minScore, setMinScore] = useState(project.min_score);
+  const [sort, setSort] = useState("best");
+  const [only, setOnly] = useState("");
 
   const load = () => {
     const q = `status=${status}&min_score=${minScore}`;
-    api(`/projects/${project.id}/leads?${q}&intent=${intent}`).then(setLeads);
+    api(`/projects/${project.id}/leads?${q}&intent=${intent}&sort=${sort}`).then(setLeads);
     api(`/projects/${project.id}/lead-counts?${q}`).then(setCounts);
   };
 
@@ -79,13 +98,20 @@ function Inbox({ project }) {
     load();
     const t = setInterval(load, 10000);
     return () => clearInterval(t);
-  }, [status, intent, minScore]);
+  }, [status, intent, minScore, sort]);
 
   const leadTotal = LEAD_TABS.reduce((n, k) => n + (counts[k] || 0), 0);
+  const shown = leads.filter((l) =>
+    only === "unanswered" ? l.num_comments === 0 : only === "urgent" ? l.urgent : only === "open" ? !l.answered : true);
 
   async function mark(lead, s) {
     await api(`/leads/${lead.id}`, { method: "PATCH", body: { status: s } });
     setLeads((ls) => (status === "all" ? ls.map((l) => (l.id === lead.id ? { ...l, status: s } : l)) : ls.filter((l) => l.id !== lead.id)));
+  }
+
+  async function refresh(lead) {
+    const fresh = await api(`/leads/${lead.id}/refresh`, { method: "POST" });
+    setLeads((ls) => ls.map((l) => (l.id === lead.id ? fresh : l)));
   }
 
   return (
@@ -100,50 +126,104 @@ function Inbox({ project }) {
       </div>
       <div className="row between small">
         <div className="row">
+          {[["", "Any"], ["unanswered", "Unanswered"], ["urgent", "Burning problem"], ["open", "Not answered well"]].map(([k, label]) => (
+            <button key={k} className={only === k ? "chip active" : "chip"} onClick={() => setOnly(k)}>{label}</button>
+          ))}
+        </div>
+        <div className="row">
           {["new", "replied", "skipped", "all"].map((s) => (
             <button key={s} className={status === s ? "chip active" : "chip"} onClick={() => setStatus(s)}>{s}</button>
           ))}
+          <select value={sort} onChange={(e) => setSort(e.target.value)}>
+            <option value="best">Best first</option>
+            <option value="new">Newest first</option>
+          </select>
         </div>
-        <label className="row muted">
-          min fit {minScore}
-          <input type="range" min="0" max="100" step="5" value={minScore} onChange={(e) => setMinScore(+e.target.value)} />
-        </label>
       </div>
-      {leads.length === 0 && (
+      <label className="row muted small">
+        min fit {minScore}
+        <input type="range" min="0" max="100" step="5" value={minScore} onChange={(e) => setMinScore(+e.target.value)} />
+      </label>
+      {shown.length === 0 && (
         <p className="muted">
-          {intent === "leads"
+          {intent === "leads" && !only
             ? "No leads yet. The worker checks Reddit every minute, and new leads appear here automatically."
             : "Nothing here yet. Try another filter or lower the min fit."}
         </p>
       )}
       <div className="stack">
-        {leads.map((l) => (
-          <article key={l.id} className="card stack">
-            <div className="row between small muted">
-              <span>r/{l.subreddit} · u/{l.author} · {l.kind} · {timeAgo(l.posted_at)}</span>
-              <span className={`score ${l.score >= 80 ? "hot" : ""}`} title="How well your product fits their need">fit {l.score}</span>
-            </div>
-            {INTENTS[l.intent] && (
-              <div className="row">
-                <span className={`intent intent-${l.intent}`}>{INTENTS[l.intent].label}</span>
-                {l.reason && <span className="small muted">{l.reason}</span>}
-              </div>
-            )}
-            <strong>{l.title}</strong>
-            {l.body && <p className="body">{l.body.slice(0, 400)}{l.body.length > 400 ? "…" : ""}</p>}
-            <div className="row small">
-              {l.matched_keywords.map((k) => <span key={k} className="chip">{k}</span>)}
-            </div>
-            {l.status === "new" && INTENTS[l.intent]?.hint && <p className="small hint">{INTENTS[l.intent].hint}</p>}
-            <div className="row">
-              <a className="button" href={l.permalink} target="_blank" rel="noreferrer">Open on Reddit</a>
-              {l.status !== "replied" && <button className="ghost" onClick={() => mark(l, "replied")}>Replied</button>}
-              {l.status !== "skipped" && <button className="ghost" onClick={() => mark(l, "skipped")}>Skip</button>}
-            </div>
-          </article>
-        ))}
+        {shown.map((l) => <LeadCard key={l.id} lead={l} onMark={mark} onRefresh={refresh} />)}
       </div>
     </>
+  );
+}
+
+function LeadCard({ lead: l, onMark, onRefresh }) {
+  const [expanded, setExpanded] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const long = l.body.length > 700;
+  const tip = hint(l);
+
+  async function refresh() {
+    setRefreshing(true);
+    try { await onRefresh(l); } finally { setRefreshing(false); }
+  }
+
+  return (
+    <article className="card lead">
+      <div className="stack lead-post">
+        <div className="row between small muted">
+          <span>r/{l.subreddit} · u/{l.author} · {timeAgo(l.posted_at)}</span>
+          <span className={`score ${l.score >= 80 ? "hot" : ""}`} title="How well your product fits their need">fit {l.score}</span>
+        </div>
+        <div className="row">
+          {INTENTS[l.intent] && <span className={`intent intent-${l.intent}`}>{INTENTS[l.intent].label}</span>}
+          {opportunity(l).map(([label, cls]) => <span key={label} className={`opp ${cls}`}>{label}</span>)}
+        </div>
+        {l.reason && <span className="small muted">{l.reason}</span>}
+        <strong>{l.title}</strong>
+        {l.body && (
+          <p className="body">
+            {expanded || !long ? l.body : `${l.body.slice(0, 700)}…`}
+            {long && <button className="link small" onClick={() => setExpanded(!expanded)}> {expanded ? "less" : "more"}</button>}
+          </p>
+        )}
+        <div className="row small">
+          {l.matched_keywords.map((k) => <span key={k} className="chip">{k}</span>)}
+        </div>
+        {tip && <p className="small hint">{tip}</p>}
+        <div className="row">
+          <a className="button" href={l.permalink} target="_blank" rel="noreferrer">Open on Reddit</a>
+          {l.status !== "replied" && <button className="ghost" onClick={() => onMark(l, "replied")}>Replied</button>}
+          {l.status !== "skipped" && <button className="ghost" onClick={() => onMark(l, "skipped")}>Skip</button>}
+        </div>
+      </div>
+      <aside className="stack lead-replies">
+        <div className="row between small">
+          <strong>{l.num_comments} {l.num_comments === 1 ? "reply" : "replies"}</strong>
+          {l.kind === "post" && (
+            <button className="link small" disabled={refreshing} onClick={refresh}>{refreshing ? "Refreshing…" : "Refresh"}</button>
+          )}
+        </div>
+        {l.matched_comments.map((c) => <Reply key={c.id} c={c} matched />)}
+        {l.replies.filter((r) => !l.matched_comments.some((m) => m.id === r.id)).map((c) => <Reply key={c.id} c={c} />)}
+        {l.num_comments === 0 && <p className="small muted">No replies yet.</p>}
+        {l.num_comments > 0 && l.replies.length === 0 && l.matched_comments.length === 0 && (
+          <p className="small muted">Replies not loaded. Hit Refresh.</p>
+        )}
+      </aside>
+    </article>
+  );
+}
+
+function Reply({ c, matched }) {
+  return (
+    <a className={`reply ${matched ? "matched" : ""}`} href={c.permalink} target="_blank" rel="noreferrer">
+      <span className="small muted">
+        u/{c.author}{c.score ? ` · ${c.score} pts` : ""}{matched ? " · matched your keywords" : ""}
+      </span>
+      <span className="small">{c.body.length > 280 ? `${c.body.slice(0, 280)}…` : c.body}</span>
+    </a>
   );
 }
 
