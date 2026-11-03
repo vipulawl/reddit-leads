@@ -2,7 +2,11 @@
 
 **Enter your website URL, and reddit-leads finds people on Reddit who need what you sell, close to real time.**
 
-Open source (AGPL-3.0). Self-host it free with your own keys, or use the hosted version (coming soon) with nothing to set up.
+An open-source, self-hosted Reddit lead generation and social listening tool. It watches subreddits and keyword searches, and uses an LLM to tell real buyers ("which tool should I use for X?") apart from self-promotion and chatter. A free GummySearch alternative you run yourself, with local models via Ollama or any OpenAI-compatible API.
+
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE) ![Python 3.13](https://img.shields.io/badge/python-3.13-blue) ![Next.js](https://img.shields.io/badge/Next.js-15-black) ![Docker](https://img.shields.io/badge/docker-compose-2496ED)
+
+Self-host it free with your own keys. A hosted version is planned, pending Reddit's commercial API terms.
 
 1. **Onboarding:** paste a URL. The app reads the homepage plus pricing/features/about pages and builds a profile: what the product does, who it's for, pain points, competitors, buyer phrases, and subreddits. It then checks every phrase against Reddit search (past year): phrases nobody uses are dropped, and subreddits are ranked by where matching posts actually appear. You review and edit before anything runs.
 2. **Monitoring:** one shared worker polls new posts and comments in every watched subreddit, plus Reddit-wide keyword search, about every 60 seconds.
@@ -28,10 +32,12 @@ No accounts or login: it's a single-user, self-hosted app. Run it on your own ma
 
 | | Self-host | Hosted |
 |---|---|---|
-| Price | free (you pay your own API usage, which can be $0) | paid plan |
+| Price | free (you pay your own API usage, which can be $0) | paid plan (planned) |
 | Keys | your own Reddit app, plus Jev or an LLM | none |
 | Runs | your machine or server | 24/7 on our servers |
-| Reddit API | your own app, used for yourself, which fits Reddit's free non-commercial tier | handled by us |
+| Reddit API | your own app and your own agreement with Reddit | handled by us |
+
+**Reddit's terms apply to you when you self-host.** Reddit requires approval before any Data API access, and written approval for commercial use (see their [Data API Wiki](https://support.reddithelp.com/hc/en-us/articles/14945211791892-Reddit-Data-API-Wiki) and Responsible Builder Policy). Using it to find customers for a business may count as commercial use, so check the terms for your situation. The tool is read-only: it never posts, votes, or messages. Every reply is written by you, on your own account, under each subreddit's rules.
 
 ## Architecture
 
