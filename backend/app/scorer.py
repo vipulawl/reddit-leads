@@ -148,6 +148,7 @@ def _score_llm(post, replies, product, http):
             "messages": [{"role": "user", "content": prompt}],
             "response_format": {"type": "json_object"},
             "temperature": 0,
+            **({"reasoning_effort": settings.scorer_reasoning_effort} if settings.scorer_reasoning_effort else {}),
         },
     )
     r.raise_for_status()

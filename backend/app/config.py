@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     scorer_base_url: str = "http://localhost:11434/v1"
     scorer_api_key: str = "ollama"
     scorer_model: str = "llama3.2"
+    scorer_reasoning_effort: str = ""
 
     llm_api_key: str = ""
     llm_base_url: str = "https://api.openai.com/v1"

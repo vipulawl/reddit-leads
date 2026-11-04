@@ -61,6 +61,7 @@ The worker fetches each subreddit **once for all users**, combining subreddits i
 | `REDDIT_REFRESH_TOKEN` | optional: log in as your Reddit user instead of app-only auth | no |
 | `TYPESAFE_API_KEY` | [console.typesafe.ai](https://console.typesafe.ai) | no. Without it, scoring uses `SCORER_*` (Ollama by default) |
 | `SCORER_BASE_URL` / `SCORER_API_KEY` / `SCORER_MODEL` | any OpenAI-compatible API. Defaults to local Ollama `llama3.2` | only if there's no Jev key |
+| `SCORER_REASONING_EFFORT` | `none` for thinking models such as `qwen3` | no |
 | `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` | OpenAI (default `gpt-5-mini`), OpenRouter, or Ollama | yes, for onboarding |
 
 **Fully free setup:** a Reddit app, no Jev key, with both `SCORER_*` and `LLM_*` pointed at Ollama (`ollama pull llama3.2`). Small local models score less reliably than Jev, so raise the min-score in the dashboard if you see noise.
@@ -141,9 +142,10 @@ Per-project settings, editable in the dashboard: keywords, excluded keywords, su
 | Scorer | Correct label | Real leads kept | Non-leads shown as leads |
 |---|---|---|---|
 | `gpt-4o-mini` | 17/18 | 6/6 | 1 |
+| `qwen3:4b` (`SCORER_REASONING_EFFORT=none`) | 13/18 | 6/6 | 4 |
 | `llama3.2` (3B) | 9/18 | 5/6 | 5 |
 
-Onboarding with `llama3.2` also gives generic keywords and misses competitors. For good results use an OpenAI model for both `LLM_*` (onboarding) and `SCORER_*` (labelling); together that's a few dollars a month.
+For a free local scorer, `qwen3:4b` is the best fit for an 8 GB machine (~20 s per thread on an M3). Set `SCORER_REASONING_EFFORT=none`, otherwise it thinks for minutes per thread. Onboarding with `llama3.2` also gives generic keywords and misses competitors. For good results use an OpenAI model for both `LLM_*` (onboarding) and `SCORER_*` (labelling); together that's a few dollars a month.
 
 ## File structure
 
