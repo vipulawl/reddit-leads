@@ -66,6 +66,8 @@ class Lead(Base):
     num_comments: Mapped[int] = mapped_column(Integer, default=0)
     replies: Mapped[list] = mapped_column(JSON, default=list)
     matched_comments: Mapped[list] = mapped_column(JSON, default=list)
+    corrected_intent: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    embedding: Mapped[list | None] = mapped_column(JSON, nullable=True)
     score: Mapped[int] = mapped_column(Integer, index=True)
     status: Mapped[str] = mapped_column(String(20), default="new")
     posted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

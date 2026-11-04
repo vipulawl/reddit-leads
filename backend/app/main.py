@@ -11,6 +11,7 @@ from . import filters
 from .auth import current_user
 from .config import settings
 from .db import SessionLocal, get_db, init_db
+from .examples import thread_text
 from .models import Lead, Project, User
 from .onboarding import generate_profile
 from .reddit import Reddit
@@ -52,6 +53,10 @@ class LeadUpdate(BaseModel):
     status: str = Field(pattern="^(new|replied|skipped)$")
 
 
+class LeadLabel(BaseModel):
+    intent: str = Field(pattern="^(buying|pain|showcase|discussion|irrelevant)$")
+
+
 def project_out(p: Project, lead_count: int = 0) -> dict:
     return {
         "id": p.id, "url": p.url, "name": p.name, "description": p.description, "icp": p.icp,
@@ -80,6 +85,7 @@ def lead_out(l: Lead) -> dict:
         "similarity": round(l.similarity, 3), "vendor_prob": round(l.vendor_prob, 3), "score": l.score,
         "intent": l.intent or "", "reason": l.reason or "", "urgent": bool(l.urgent), "answered": bool(l.answered),
         "num_comments": l.num_comments or 0, "replies": l.replies or [], "matched_comments": l.matched_comments or [],
+        "corrected": l.corrected_intent is not None,
         "priority": priority(l), "status": l.status, "posted_at": l.posted_at.isoformat(), "created_at": l.created_at.isoformat(),
     }
 
@@ -244,5 +250,18 @@ def update_lead(lead_id: int, body: LeadUpdate, user: User = Depends(current_use
         raise HTTPException(404, "Lead not found")
     own_project(db, user, lead.project_id)
     lead.status = body.status
+    db.commit()
+    return lead_out(lead)
+
+
+@app.post("/api/leads/{lead_id}/label")
+def label_lead(lead_id: int, body: LeadLabel, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    lead = db.get(Lead, lead_id)
+    if not lead:
+        raise HTTPException(404, "Lead not found")
+    own_project(db, user, lead.project_id)
+    lead.intent = lead.corrected_intent = body.intent
+    if lead.embedding is None:
+        lead.embedding = filters.embed([thread_text(lead.title, lead.body)])[0].tolist()
     db.commit()
     return lead_out(lead)

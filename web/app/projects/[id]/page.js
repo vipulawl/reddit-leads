@@ -61,6 +61,8 @@ const INTENTS = {
   discussion: { label: "Discussion", tab: "Discussion", hint: "" },
 };
 const LEAD_TABS = ["buying", "pain", "showcase"];
+const RELABEL = [["buying", "Hot: asking for a tool"], ["pain", "Warm: has the problem"], ["showcase", "Self-promotion"],
+  ["discussion", "Just discussion"], ["irrelevant", "Not relevant"]];
 
 function opportunity(l) {
   if (!["buying", "pain"].includes(l.intent)) return [];
@@ -114,6 +116,12 @@ function Inbox({ project }) {
     setLeads((ls) => ls.map((l) => (l.id === lead.id ? fresh : l)));
   }
 
+  async function relabel(lead, label) {
+    const fresh = await api(`/leads/${lead.id}/label`, { method: "POST", body: { intent: label } });
+    setLeads((ls) => ls.map((l) => (l.id === lead.id ? fresh : l)));
+    api(`/projects/${project.id}/lead-counts?status=${status}&min_score=${minScore}`).then(setCounts);
+  }
+
   return (
     <>
       <div className="row intents">
@@ -152,13 +160,13 @@ function Inbox({ project }) {
         </p>
       )}
       <div className="stack">
-        {shown.map((l) => <LeadCard key={l.id} lead={l} onMark={mark} onRefresh={refresh} />)}
+        {shown.map((l) => <LeadCard key={l.id} lead={l} onMark={mark} onRefresh={refresh} onRelabel={relabel} />)}
       </div>
     </>
   );
 }
 
-function LeadCard({ lead: l, onMark, onRefresh }) {
+function LeadCard({ lead: l, onMark, onRefresh, onRelabel }) {
   const [expanded, setExpanded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const long = l.body.length > 700;
@@ -179,6 +187,11 @@ function LeadCard({ lead: l, onMark, onRefresh }) {
         <div className="row">
           {INTENTS[l.intent] && <span className={`intent intent-${l.intent}`}>{INTENTS[l.intent].label}</span>}
           {opportunity(l).map(([label, cls]) => <span key={label} className={`opp ${cls}`}>{label}</span>)}
+          <select className="relabel small" value="" onChange={(e) => e.target.value && onRelabel(l, e.target.value)}
+            title="Your corrections become examples the scorer learns from">
+            <option value="">{l.corrected ? "Corrected by you ✓" : "Wrong label?"}</option>
+            {RELABEL.filter(([k]) => k !== l.intent).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+          </select>
         </div>
         {l.reason && <span className="small muted">{l.reason}</span>}
         <strong>{l.title}</strong>

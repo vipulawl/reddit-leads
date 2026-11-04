@@ -7,6 +7,7 @@ import httpx
 from sqlalchemy import select
 
 from .db import SessionLocal, init_db
+from .examples import load_corrections
 from .models import Lead, Project
 from .reddit import Reddit
 from .scorer import backend as scorer_backend
@@ -35,13 +36,14 @@ def rescore(project: Project, db, dry_run: bool, limit: int | None):
     if dry_run:
         return
     reddit, http = Reddit(), httpx.Client(timeout=120)
+    corrections = load_corrections(db, project.id, project.name)
     for tid, old in items:
         matched = [{"id": l.reddit_id, "author": l.author, "body": l.body[:1500], "score": 0, "permalink": l.permalink,
                     "posted_at": l.posted_at.isoformat()} for l in old if l.kind == "comment"]
         hits = {k for l in old for k in l.matched_keywords}
         try:
             new, _ = build_lead(reddit, http, project, tid, matched, hits, max(l.similarity for l in old),
-                                max_age=timedelta(days=365))
+                                max_age=timedelta(days=365), corrections=corrections)
         except (httpx.HTTPError, KeyError, ValueError, IndexError) as e:
             log.warning("skipping %s: %s", tid, e)
             continue
@@ -50,6 +52,8 @@ def rescore(project: Project, db, dry_run: bool, limit: int | None):
         db.flush()
         if new:
             new.status = max((l.status for l in old), key=lambda s: STATUS_RANK.get(s, 0))
+            if fixed := next((l for l in old if l.corrected_intent), None):
+                new.intent, new.corrected_intent, new.embedding = fixed.corrected_intent, fixed.corrected_intent, fixed.embedding
             db.add(new)
             log.info("%s %-10s fit=%3d replies=%3d (was %d cards) %s", tid, new.intent, new.score, new.num_comments,
                      len(old), new.title[:60])

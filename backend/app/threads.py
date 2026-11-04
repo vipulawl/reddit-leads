@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -30,11 +31,12 @@ def merge_matches(lead: Lead, matched: list[dict], hits: set[str]):
 
 
 def build_lead(reddit: Reddit, http: httpx.Client, project: Project, post_id: str, matched: list[dict],
-               hits: set[str], sim: float, max_age: timedelta = THREAD_MAX_AGE) -> tuple[Lead | None, dict]:
+               hits: set[str], sim: float, max_age: timedelta = THREAD_MAX_AGE,
+               corrections: Sequence[dict] = ()) -> tuple[Lead | None, dict]:
     post, replies = reddit.thread(post_id)
     if post["removed"] or post["posted_at"] < datetime.now(timezone.utc) - max_age:
         return None, {}
-    res = score_thread(post, replies, product_context(project), http)
+    res = score_thread(post, replies, product_context(project), http, corrections)
     lead = Lead(
         project_id=project.id, reddit_id=post_id, kind="post", subreddit=post["subreddit"], author=post["author"],
         title=post["title"], body=post["body"][:5000], permalink=post["permalink"], posted_at=post["posted_at"],

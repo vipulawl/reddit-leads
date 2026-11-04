@@ -9,6 +9,7 @@ import httpx
 from sqlalchemy import select
 
 from . import filters
+from .examples import load_corrections
 from .db import SessionLocal, init_db
 from .models import Lead, Project
 from .reddit import Reddit
@@ -139,10 +140,13 @@ class Worker:
                 log.info("[dry-run] would score p%d thread %s sim=%.2f %s", g["project"].id, post_id, g["sim"], sorted(g["hits"]))
             return
 
+        corrections = {p.id: load_corrections(db, p.id, p.name) for p in {g["project"] for _, g in new}}
+
         def run(entry):
             post_id, g = entry
             try:
-                return build_lead(self.reddit, self.http, g["project"], post_id, g["matched"], g["hits"], g["sim"])
+                return build_lead(self.reddit, self.http, g["project"], post_id, g["matched"], g["hits"], g["sim"],
+                                  corrections=corrections[g["project"].id])
             except (httpx.HTTPError, KeyError, ValueError, IndexError) as e:
                 log.warning("scoring failed for thread %s: %s", post_id, e)
                 return None, {}

@@ -32,6 +32,7 @@ ADDED_COLUMNS = {
         "intent": "VARCHAR(20) DEFAULT ''", "reason": "TEXT DEFAULT ''",
         "urgent": "BOOLEAN DEFAULT FALSE", "answered": "BOOLEAN DEFAULT FALSE", "num_comments": "INTEGER DEFAULT 0",
         "replies": "JSON DEFAULT '[]'", "matched_comments": "JSON DEFAULT '[]'",
+        "corrected_intent": "VARCHAR(20)", "embedding": "JSON",
     },
 }
 

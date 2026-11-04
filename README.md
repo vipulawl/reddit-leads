@@ -125,6 +125,10 @@ python -m backend.app.rescore --dry-run               # just count
 
 Per-project settings, editable in the dashboard: keywords, excluded keywords, subreddits, similarity threshold (default `0.55`), and minimum lead score (default `60`).
 
+### Teaching the scorer
+
+Every lead card has a **Wrong label?** menu. A correction relabels the card and is saved as an example for that project. When scoring a new thread, the scorer picks the 3 most similar examples (by embedding) and puts them in the prompt: your own corrections first, then a built-in pool of 25 made-up threads (`backend/app/examples.py`) so new projects start with sensible examples. Nothing is fine-tuned, and corrections stay in your own database.
+
 ## Costs / API usage
 
 | Item | Usage | Cost |
@@ -133,19 +137,21 @@ Per-project settings, editable in the dashboard: keywords, excluded keywords, su
 | Embeddings | local `BAAI/bge-small-en-v1.5` (~65MB download on first run) | $0 |
 | Thread fetch | 1 Reddit call per new thread that passes stages 1–2 | free (counts toward Reddit's rate limit) |
 | Scoring: Jev | once per thread, ~1.5k tokens with replies | ≈ $0.50/month per active project |
-| Scoring: `gpt-4o-mini` | once per thread, ~1.5k tokens in, ~100 out | ≈ $0.0003/thread, ~$1–3/month at 100–300 threads/day |
-| Scoring: Ollama | runs locally, ~1.5k tokens per thread | $0 (needs a machine that can run a 3B model) |
+| Scoring: `gpt-4o-mini` | once per thread, ~1.2k tokens in (thread + 3 examples), ~100 out | ≈ $0.0002/thread, ~$1–2/month at 100–300 threads/day |
+| Scoring: Ollama | runs locally, ~1.2k tokens per thread | $0 (needs a machine that can run a 3B model) |
 | Onboarding LLM | one call per project, ~5k tokens, plus ~35 Reddit searches | < $0.01 with `gpt-5-mini`, $0 with Ollama |
 
-**Model quality** (18 real threads, hand-labelled by what the original poster wants):
+**Model quality** (18 real threads, hand-labelled by what the original poster wants, before any user corrections):
 
-| Scorer | Correct label | Real leads kept | Non-leads shown as leads |
-|---|---|---|---|
-| `gpt-4o-mini` | 17/18 | 6/6 | 1 |
-| `qwen3:4b` (`SCORER_REASONING_EFFORT=none`) | 13/18 | 6/6 | 4 |
-| `llama3.2` (3B) | 9/18 | 5/6 | 5 |
+| Scorer | Correct label | Real leads kept | Non-leads shown as leads | Time per thread (M3, 8 GB) |
+|---|---|---|---|---|
+| `gpt-4o-mini` | 14–17/18 | 6/6 | 1–4 | ~1.5 s |
+| `qwen3:4b` (`SCORER_REASONING_EFFORT=none`) | 13–14/18 | 5–6/6 | 2–4 | ~7 s |
+| `llama3.2` (3B) | 9/18 | 5/6 | 5 | ~5 s |
 
-For a free local scorer, `qwen3:4b` is the best fit for an 8 GB machine (~20 s per thread on an M3). Set `SCORER_REASONING_EFFORT=none`, otherwise it thinks for minutes per thread. Onboarding with `llama3.2` also gives generic keywords and misses competitors. For good results use an OpenAI model for both `LLM_*` (onboarding) and `SCORER_*` (labelling); together that's a few dollars a month.
+Ranges are repeat runs as threads gained replies. Most remaining misses are borderline (opinion threads and "how should I report X" questions from people in the field).
+
+For a free local scorer, `qwen3:4b` is the best fit for an 8 GB machine. Set `SCORER_REASONING_EFFORT=none`, otherwise it thinks for minutes per thread. Onboarding with `llama3.2` also gives generic keywords and misses competitors. For good results use an OpenAI model for both `LLM_*` (onboarding) and `SCORER_*` (labelling); together that's a few dollars a month.
 
 ## File structure
 
@@ -161,6 +167,7 @@ reddit-leads/
 │   ├── onboarding.py   website → product profile (LLM), checked against Reddit search
 │   ├── filters.py      stage 1 keyword match + stage 2 embedding filter
 │   ├── scorer.py       stage 3 intent label + fit: Jev or OpenAI-compatible LLM
+│   ├── examples.py     example pool + your corrections, 3 most similar go in each prompt
 │   ├── threads.py      thread → lead: fetch post + replies, score, store
 │   ├── rescore.py      re-label existing leads, one per thread
 │   └── worker.py       poll → filter → group by thread → score → save loop

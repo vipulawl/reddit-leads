@@ -2,15 +2,19 @@ import argparse
 import json
 import logging
 import re
+from collections.abc import Sequence
 
 import httpx
 
+from . import examples as fewshot
 from .config import settings
 
 log = logging.getLogger(__name__)
 JEV_ENDPOINT = "https://api.typesafe.ai/v1/systemone"
 INTENTS = ("buying", "pain", "showcase", "discussion", "irrelevant")
 MAX_REPLIES = 8
+PROMPT_REPLIES = 5
+PROMPT_CHARS = 1500
 
 FIT_LEVELS = [
     "This product would not help the author",
@@ -30,6 +34,15 @@ QUESTIONS = {
 
 LLM_PROMPT = """You check whether a Reddit thread is a sales lead for a product. Judge only the ORIGINAL POSTER (the author of the post), not the people replying.
 
+"reason": one short sentence (max 20 words) on what the original poster wants.
+{questions}
+"fit": how well the product fits the original poster's need:
+{levels}
+
+Solved examples from other threads:
+{examples}
+
+Now this thread.
 Product: {product}
 
 Post in r/{subreddit} by u/{author}, {num_comments} replies so far:
@@ -38,11 +51,6 @@ Text: {text}
 
 Top replies:
 {replies}
-
-"reason": one short sentence (max 20 words) on what the original poster wants.
-{questions}
-"fit": how well the product fits the original poster's need:
-{levels}
 
 Return only JSON: {{"reason": "<sentence>", {question_keys}, "fit": <0-3>}}"""
 
@@ -77,10 +85,15 @@ def backend() -> str:
     return "jev" if settings.typesafe_api_key else "llm"
 
 
-def score_thread(post: dict, replies: list[dict], product: dict, client: httpx.Client | None = None) -> dict:
+def score_thread(post: dict, replies: list[dict], product: dict, client: httpx.Client | None = None,
+                 corrections: Sequence[dict] = ()) -> dict:
     http = client or httpx.Client(timeout=120)
-    replies = [r for r in replies if r["author"] != post["author"]][:MAX_REPLIES]
-    answers, fit, reason, usage = (_score_jev if backend() == "jev" else _score_llm)(post, replies, product, http)
+    replies = [r for r in replies if r["author"] != post["author"]][:PROMPT_REPLIES]
+    if backend() == "jev":
+        answers, fit, reason, usage = _score_jev(post, replies, product, http)
+    else:
+        shots = fewshot.pick(post["title"], post["body"], corrections)
+        answers, fit, reason, usage = _score_llm(post, replies, product, http, shots)
     promo = promo_signal(post["title"], post["body"])
     if promo:
         answers["is_vendor"] = True
@@ -124,21 +137,30 @@ def intent_from_answers(out: dict) -> str:
 def _replies_text(replies: list[dict]) -> str:
     if not replies:
         return "(no replies yet)"
-    return "\n".join(f"- u/{r['author']}: {r['body'][:300]}" for r in replies)
+    return "\n".join(f"- u/{r['author']}: {r['body'][:200]}" for r in replies)
 
 
-def _score_llm(post, replies, product, http):
+def _examples_text(shots: list[dict]) -> str:
+    return "\n\n".join(
+        f"Product: {e['product']}\nTitle: {e['title']}\nText: {e['text']}\nTop replies: "
+        f"{' | '.join(e['replies']) or '(none)'}\nAnswer: {json.dumps(e['answer'])}"
+        for e in shots
+    )
+
+
+def _score_llm(post, replies, product, http, shots):
     prompt = LLM_PROMPT.format(
         product=json.dumps(product),
         subreddit=post["subreddit"],
         author=post["author"],
         num_comments=post.get("num_comments", len(replies)),
         title=post["title"],
-        text=post["body"][:3000],
+        text=post["body"][:PROMPT_CHARS],
         replies=_replies_text(replies),
         questions="\n".join(f'"{k}": true/false. {q}' for k, q in QUESTIONS.items()),
         question_keys=", ".join(f'"{k}": <true/false>' for k in QUESTIONS),
         levels="\n".join(f"{i} = {d}" for i, d in enumerate(FIT_LEVELS)),
+        examples=_examples_text(shots),
     )
     r = http.post(
         f"{settings.scorer_base_url.rstrip('/')}/chat/completions",
