@@ -9,7 +9,7 @@ An open-source, self-hosted Reddit lead generation and social listening tool. It
 Self-host it free with your own keys. A hosted version is planned, pending Reddit's commercial API terms.
 
 1. **Onboarding:** paste a URL. The app reads the homepage plus pricing/features/about pages and builds a profile: what the product does, who it's for, pain points, competitors, buyer phrases, and subreddits. It then checks every phrase against Reddit search (past year): phrases nobody uses are dropped, and subreddits are ranked by where matching posts actually appear. You review and edit before anything runs.
-2. **Monitoring:** one shared worker polls new posts and comments in every watched subreddit, plus Reddit-wide keyword search, about every 60 seconds.
+2. **Monitoring:** one shared worker polls new posts and comments in every watched subreddit, plus Reddit-wide keyword search, about every 60 seconds with Reddit API keys, or every ~5 minutes via Reddit's public RSS feeds without them.
 3. **Qualification:** a 3-stage funnel, cheapest stage first:
    | Stage | What | Cost |
    |---|---|---|
@@ -81,7 +81,7 @@ Since November 2025, new Reddit API apps need Reddit's approval (Reddit's Respon
 
 RSS is meant for trying it out and light personal use. Add approved API keys for full coverage.
 
-**Fully free setup:** no Reddit keys (RSS), no Jev key, with both `SCORER_*` and `LLM_*` pointed at Ollama (`ollama pull llama3.2`). Small local models score less reliably than Jev, so raise the min-score in the dashboard if you see noise.
+**Fully free setup:** no Reddit keys (RSS), no Jev key, with both `SCORER_*` and `LLM_*` pointed at Ollama: `ollama pull qwen3:4b`, then `SCORER_MODEL=qwen3:4b` and `SCORER_REASONING_EFFORT=none`. Small local models score less reliably than `gpt-4o-mini` (see the model table below); correcting labels in the inbox helps them most.
 
 ## Run with Docker (recommended)
 
