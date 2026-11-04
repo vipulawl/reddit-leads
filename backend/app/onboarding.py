@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 from openai import OpenAI
 
 from .config import settings
-from .reddit import Reddit
+from .reddit import make_reddit, source
 
 PROMPT = """You are setting up Reddit lead monitoring for a business. The goal is to find Reddit posts written by people who could become customers of this exact product.
 
@@ -112,7 +112,8 @@ def generate_profile(url: str, validate_subs: bool = True) -> dict:
     }
     subs = [s.removeprefix("/r/").removeprefix("r/").strip() for s in _strings(raw.get("subreddits"))]
     if validate_subs:
-        profile["keywords"], subs = ground_in_reddit(profile["keywords"], competitors, subs)
+        searches = settings.rss_onboarding_searches if source() == "rss" else 30
+        profile["keywords"], subs = ground_in_reddit(profile["keywords"], competitors, subs, max_searches=searches)
     profile["subreddits"] = subs
     return profile
 
@@ -121,7 +122,7 @@ def ground_in_reddit(keywords: list[str], competitors: list[str], suggested: lis
                      max_searches: int = 30, max_subs: int = 15) -> tuple[list[str], list[str]]:
     """Search Reddit's past year for each keyword and "<competitor> alternative": drop phrases
     nobody uses and rank subreddits by where matching posts actually appear."""
-    reddit = Reddit()
+    reddit = make_reddit()
     try:
         reddit._auth()
     except httpx.HTTPError as e:
@@ -129,7 +130,7 @@ def ground_in_reddit(keywords: list[str], competitors: list[str], suggested: lis
     evidence: Counter[str] = Counter()
     names: dict[str, str] = {}
     hits: dict[str, int] = {}
-    searches = keywords[:max_searches] + [f"{c} alternative" for c in competitors[:5]]
+    searches = keywords[:max_searches] + [f"{c} alternative" for c in competitors[:min(5, max_searches)]]
     for kw in searches:
         try:
             posts = reddit.search(kw, limit=25, t="year", sort="relevance")

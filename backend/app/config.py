@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     reddit_client_secret: str = ""
     reddit_user_agent: str = "web:reddit-leads:v0.1"
     reddit_refresh_token: str = ""
+    reddit_source: str = "auto"
+    reddit_rss_min_gap: float = 2.0
+    rss_onboarding_searches: int = 6
 
     typesafe_api_key: str = ""
     jev_model: str = "jev-latest"

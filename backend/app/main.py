@@ -14,7 +14,7 @@ from .db import SessionLocal, get_db, init_db
 from .examples import thread_text
 from .models import Lead, Project, User
 from .onboarding import generate_profile
-from .reddit import Reddit
+from .reddit import make_reddit
 from .threads import refresh_replies
 
 app = FastAPI(title="reddit-leads")
@@ -236,7 +236,7 @@ def refresh_lead(lead_id: int, user: User = Depends(current_user), db: Session =
     if not lead.reddit_id.startswith("t3_"):
         raise HTTPException(400, "Only thread leads can be refreshed")
     try:
-        refresh_replies(Reddit(), lead)
+        refresh_replies(make_reddit(), lead)
     except httpx.HTTPError as e:
         raise HTTPException(502, f"Reddit request failed: {e}")
     db.commit()

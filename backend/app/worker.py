@@ -12,7 +12,7 @@ from . import filters
 from .examples import load_corrections
 from .db import SessionLocal, init_db
 from .models import Lead, Project
-from .reddit import Reddit
+from .reddit import make_reddit, source
 from .scorer import backend as scorer_backend
 from .threads import build_lead, comment_out, merge_matches
 
@@ -38,7 +38,7 @@ class SeenCache:
 class Worker:
     def __init__(self, args):
         self.args = args
-        self.reddit = Reddit()
+        self.reddit = make_reddit()
         self.http = httpx.Client(timeout=120)
         self.seen = SeenCache()
         self.search_cursor = 0
@@ -193,16 +193,21 @@ class Worker:
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--once", action="store_true")
-    p.add_argument("--interval", type=int, default=60)
-    p.add_argument("--searches-per-cycle", type=int, default=5)
+    p.add_argument("--interval", type=int, help="seconds between cycles (default: 60 with API keys, 300 with RSS)")
+    p.add_argument("--searches-per-cycle", type=int, help="keyword searches per cycle (default: 5 with API keys, 1 with RSS)")
     p.add_argument("--max-score-per-cycle", type=int, default=50, help="max new threads scored per cycle")
     p.add_argument("--score-workers", type=int, default=4, help="parallel thread fetch + scoring calls")
     p.add_argument("--refresh-every", type=int, default=5, help="refresh reply counts every N cycles")
     p.add_argument("--dry-run", action="store_true")
     args = p.parse_args()
+    rss = source() == "rss"
+    args.interval = args.interval or (300 if rss else 60)
+    if args.searches_per_cycle is None:
+        args.searches_per_cycle = 1 if rss else 5
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
     init_db()
+    log.info("reading Reddit via %s", "public RSS feeds (no API keys)" if rss else "the Data API")
     worker = Worker(args)
     while True:
         started = time.time()

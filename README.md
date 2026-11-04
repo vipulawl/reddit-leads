@@ -33,7 +33,7 @@ No accounts or login: it's a single-user, self-hosted app. Run it on your own ma
 | | Self-host | Hosted |
 |---|---|---|
 | Price | free (you pay your own API usage, which can be $0) | paid plan (planned) |
-| Keys | your own Reddit app, plus Jev or an LLM | none |
+| Keys | an LLM key or local Ollama. Reddit API keys optional (RSS without them) | none |
 | Runs | your machine or server | 24/7 on our servers |
 | Reddit API | your own app and your own agreement with Reddit | handled by us |
 
@@ -56,15 +56,32 @@ The worker fetches each subreddit **once for all users**, combining subreddits i
 
 | Key | Where | Required |
 |---|---|---|
-| `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` | [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps) → create app ("web app" or "script") | yes |
+| `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` | an approved Reddit Data API app (see below) | no. Without them it reads Reddit's public RSS feeds |
 | `REDDIT_USER_AGENT` | `web:reddit-leads:v0.1 (by /u/yourname)` | yes |
+| `REDDIT_SOURCE` | `auto` (API if keys are set, else RSS), `api`, or `rss` | no |
+| `REDDIT_RSS_MIN_GAP` / `RSS_ONBOARDING_SEARCHES` | seconds between RSS requests (default `2`, Reddit's rate-limit headers decide the rest) / Reddit searches during onboarding in RSS mode (default `6`) | no |
 | `REDDIT_REFRESH_TOKEN` | optional: log in as your Reddit user instead of app-only auth | no |
 | `TYPESAFE_API_KEY` | [console.typesafe.ai](https://console.typesafe.ai) | no. Without it, scoring uses `SCORER_*` (Ollama by default) |
 | `SCORER_BASE_URL` / `SCORER_API_KEY` / `SCORER_MODEL` | any OpenAI-compatible API. Defaults to local Ollama `llama3.2` | only if there's no Jev key |
 | `SCORER_REASONING_EFFORT` | `none` for thinking models such as `qwen3` | no |
 | `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` | OpenAI (default `gpt-5-mini`), OpenRouter, or Ollama | yes, for onboarding |
 
-**Fully free setup:** a Reddit app, no Jev key, with both `SCORER_*` and `LLM_*` pointed at Ollama (`ollama pull llama3.2`). Small local models score less reliably than Jev, so raise the min-score in the dashboard if you see noise.
+### Reddit access: API keys or RSS
+
+Since November 2025, new Reddit API apps need Reddit's approval (Reddit's Responsible Builder Policy), which can take weeks. So reddit-leads works without keys: it falls back to Reddit's public RSS feeds.
+
+| | API keys | RSS (no keys) |
+|---|---|---|
+| New posts in watched subreddits | every 60 s | every ~5 min |
+| New comments | ✓ | ✓, slower |
+| Reddit-wide keyword search | 5 per cycle | 1 per cycle |
+| Onboarding Reddit checks | ~35 searches | 6 searches |
+| Reply-count refresh | ✓ | only when you hit Refresh on a card |
+| Reliability | stable | anonymous access allows roughly one request per rate-limit window and Reddit can tighten it any time; works best from a home connection, server IPs get blocked more |
+
+RSS is meant for trying it out and light personal use. Add approved API keys for full coverage.
+
+**Fully free setup:** no Reddit keys (RSS), no Jev key, with both `SCORER_*` and `LLM_*` pointed at Ollama (`ollama pull llama3.2`). Small local models score less reliably than Jev, so raise the min-score in the dashboard if you see noise.
 
 ## Run with Docker (recommended)
 
@@ -106,8 +123,8 @@ python -m backend.app.onboarding https://example.com                      # prof
 | Flag | Default | What |
 |---|---|---|
 | `--once` | off | run one poll cycle and exit |
-| `--interval` | `60` | seconds between cycles |
-| `--searches-per-cycle` | `5` | Reddit-wide keyword searches per cycle (round-robin across all projects) |
+| `--interval` | `60` (`300` with RSS) | seconds between cycles |
+| `--searches-per-cycle` | `5` (`1` with RSS) | Reddit-wide keyword searches per cycle (round-robin across all projects) |
 | `--max-score-per-cycle` | `50` | cap on new threads scored per cycle (cost guard) |
 | `--score-workers` | `4` | parallel thread fetch + scoring calls (local Ollama runs them one at a time anyway) |
 | `--refresh-every` | `5` | refresh reply counts every N cycles (1 Reddit call per 100 leads) |
@@ -163,6 +180,7 @@ reddit-leads/
 │   ├── models.py       User, Project, Lead
 │   ├── auth.py         single local user (no login)
 │   ├── main.py         FastAPI routes
+│   ├── rss.py          Reddit public RSS reader (no API keys), one shared throttle
 │   ├── reddit.py       Reddit OAuth client (app-only), rate-limit aware
 │   ├── onboarding.py   website → product profile (LLM), checked against Reddit search
 │   ├── filters.py      stage 1 keyword match + stage 2 embedding filter

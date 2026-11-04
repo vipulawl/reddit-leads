@@ -9,7 +9,7 @@ from sqlalchemy import select
 from .db import SessionLocal, init_db
 from .examples import load_corrections
 from .models import Lead, Project
-from .reddit import Reddit
+from .reddit import make_reddit
 from .scorer import backend as scorer_backend
 from .threads import build_lead
 
@@ -35,7 +35,7 @@ def rescore(project: Project, db, dry_run: bool, limit: int | None):
              sum(len(v) for v in groups.values()), len(groups), len(items), scorer_backend())
     if dry_run:
         return
-    reddit, http = Reddit(), httpx.Client(timeout=120)
+    reddit, http = make_reddit(), httpx.Client(timeout=120)
     corrections = load_corrections(db, project.id, project.name)
     for tid, old in items:
         matched = [{"id": l.reddit_id, "author": l.author, "body": l.body[:1500], "score": 0, "permalink": l.permalink,

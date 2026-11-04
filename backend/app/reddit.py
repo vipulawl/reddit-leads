@@ -89,6 +89,19 @@ class Reddit:
         ]
 
 
+def source() -> str:
+    if settings.reddit_source != "auto":
+        return settings.reddit_source
+    return "api" if settings.reddit_client_id and settings.reddit_client_secret else "rss"
+
+
+def make_reddit():
+    if source() == "rss":
+        from .rss import RedditRSS
+        return RedditRSS()
+    return Reddit()
+
+
 def normalize(child: dict) -> dict:
     d = child["data"]
     is_comment = child["kind"] == "t1"
@@ -113,5 +126,5 @@ if __name__ == "__main__":
     p.add_argument("--sub", default="SaaS")
     p.add_argument("--limit", type=int, default=5)
     args = p.parse_args()
-    for item in Reddit().new_posts([args.sub], limit=args.limit):
+    for item in make_reddit().new_posts([args.sub], limit=args.limit):
         print(f"[{item['subreddit']}] {item['title'][:90]}  {item['permalink']}")

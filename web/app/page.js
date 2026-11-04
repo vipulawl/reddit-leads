@@ -15,7 +15,8 @@ const PLANS = [
     note: "You pay only your own API usage, which can be $0",
     points: [
       "Open source (AGPL-3.0), runs on your machine or server",
-      "Bring your own Reddit app plus Jev or any OpenAI-compatible LLM",
+      "Works without Reddit API keys (public feeds, ~5 min delay). Add approved keys for full coverage",
+      "Any OpenAI-compatible LLM, or free local models with Ollama",
       "Fully free option: Ollama for both onboarding and scoring",
       "Runs while your machine is on; you handle updates",
     ],
