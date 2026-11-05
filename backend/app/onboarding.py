@@ -6,7 +6,7 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 from bs4 import BeautifulSoup
-from openai import OpenAI
+from openai import BadRequestError, OpenAI
 
 from .config import settings
 from .reddit import make_reddit, source
@@ -83,12 +83,7 @@ def generate_profile(url: str, validate_subs: bool = True) -> dict:
     text = fetch_site_text(url)
     client = OpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
     for _ in range(3):
-        resp = client.chat.completions.create(
-            model=settings.llm_model,
-            temperature=0.2,
-            messages=[{"role": "user", "content": PROMPT.format(url=url, text=text)}],
-            response_format={"type": "json_object"},
-        )
+        resp = _complete(client, PROMPT.format(url=url, text=text))
         try:
             raw = json.loads(resp.choices[0].message.content)
         except json.JSONDecodeError:
@@ -116,6 +111,17 @@ def generate_profile(url: str, validate_subs: bool = True) -> dict:
         profile["keywords"], subs = ground_in_reddit(profile["keywords"], competitors, subs, max_searches=searches)
     profile["subreddits"] = subs
     return profile
+
+
+def _complete(client: OpenAI, prompt: str):
+    args = {"model": settings.llm_model, "messages": [{"role": "user", "content": prompt}],
+            "response_format": {"type": "json_object"}}
+    try:
+        return client.chat.completions.create(**args, temperature=0.2)
+    except BadRequestError as e:
+        if "temperature" not in str(e):
+            raise
+        return client.chat.completions.create(**args)
 
 
 def ground_in_reddit(keywords: list[str], competitors: list[str], suggested: list[str],

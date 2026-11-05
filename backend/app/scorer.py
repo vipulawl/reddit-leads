@@ -13,6 +13,7 @@ log = logging.getLogger(__name__)
 JEV_ENDPOINT = "https://api.typesafe.ai/v1/systemone"
 INTENTS = ("buying", "pain", "showcase", "discussion", "irrelevant")
 MAX_REPLIES = 8
+NO_TEMPERATURE: set[str] = set()
 PROMPT_REPLIES = 5
 PROMPT_CHARS = 1500
 
@@ -164,17 +165,20 @@ def _score_llm(post, replies, product, http, shots):
         levels="\n".join(f"{i} = {d}" for i, d in enumerate(FIT_LEVELS)),
         examples=_examples_text(shots),
     )
-    r = http.post(
-        f"{settings.scorer_base_url.rstrip('/')}/chat/completions",
-        headers={"Authorization": f"Bearer {settings.scorer_api_key}"},
-        json={
-            "model": settings.scorer_model,
-            "messages": [{"role": "user", "content": prompt}],
-            "response_format": {"type": "json_object"},
-            "temperature": 0,
-            **({"reasoning_effort": settings.scorer_reasoning_effort} if settings.scorer_reasoning_effort else {}),
-        },
-    )
+    body = {
+        "model": settings.scorer_model,
+        "messages": [{"role": "user", "content": prompt}],
+        "response_format": {"type": "json_object"},
+        **({"reasoning_effort": settings.scorer_reasoning_effort} if settings.scorer_reasoning_effort else {}),
+    }
+    url = f"{settings.scorer_base_url.rstrip('/')}/chat/completions"
+    headers = {"Authorization": f"Bearer {settings.scorer_api_key}"}
+    if settings.scorer_model not in NO_TEMPERATURE:
+        r = http.post(url, headers=headers, json={**body, "temperature": 0})
+        if r.status_code == 400 and "temperature" in r.text:
+            NO_TEMPERATURE.add(settings.scorer_model)
+    if settings.scorer_model in NO_TEMPERATURE:
+        r = http.post(url, headers=headers, json=body)
     r.raise_for_status()
     data = r.json()
     out = json.loads(data["choices"][0]["message"]["content"])

@@ -64,7 +64,7 @@ The worker fetches each subreddit **once for all users**, combining subreddits i
 | `TYPESAFE_API_KEY` | [console.typesafe.ai](https://console.typesafe.ai) | no. Without it, scoring uses `SCORER_*` (Ollama by default) |
 | `SCORER_BASE_URL` / `SCORER_API_KEY` / `SCORER_MODEL` | any OpenAI-compatible API. Defaults to local Ollama `llama3.2` | only if there's no Jev key |
 | `SCORER_REASONING_EFFORT` | `none` for thinking models such as `qwen3` | no |
-| `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` | OpenAI (default `gpt-5-mini`), OpenRouter, or Ollama | yes, for onboarding |
+| `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` | any OpenAI-compatible API (default OpenAI `gpt-4o-mini`), see *Choosing a model* | yes, for onboarding |
 
 ### Reddit access: API keys or RSS
 
@@ -156,19 +156,47 @@ Every lead card has a **Wrong label?** menu. A correction relabels the card and 
 | Scoring: Jev | once per thread, ~1.5k tokens with replies | ≈ $0.50/month per active project |
 | Scoring: `gpt-4o-mini` | once per thread, ~1.2k tokens in (thread + 3 examples), ~100 out | ≈ $0.0002/thread, ~$1–2/month at 100–300 threads/day |
 | Scoring: Ollama | runs locally, ~1.2k tokens per thread | $0 (needs a machine that can run a 3B model) |
-| Onboarding LLM | one call per project, ~5k tokens, plus ~35 Reddit searches | < $0.01 with `gpt-5-mini`, $0 with Ollama |
+| Onboarding LLM | one call per project, ~5k tokens, plus ~35 Reddit searches | < $0.01 with `gpt-4o-mini`, $0 with Ollama |
 
 **Model quality** (18 real threads, hand-labelled by what the original poster wants, before any user corrections):
 
 | Scorer | Correct label | Real leads kept | Non-leads shown as leads | Time per thread (M3, 8 GB) |
 |---|---|---|---|---|
 | `gpt-4o-mini` | 14–17/18 | 6/6 | 1–4 | ~1.5 s |
+| `gpt-5-mini` | 13/14 (4 threads since removed) | 6/6 | 1 | ~8 s |
 | `qwen3:4b` (`SCORER_REASONING_EFFORT=none`) | 13–14/18 | 5–6/6 | 2–4 | ~7 s |
 | `llama3.2` (3B) | 9/18 | 5/6 | 5 | ~5 s |
 
-Ranges are repeat runs as threads gained replies. Most remaining misses are borderline (opinion threads and "how should I report X" questions from people in the field).
+Ranges are repeat runs as threads gained replies or were removed. Most remaining misses are borderline (opinion threads and "how should I report X" questions from people in the field).
 
-For a free local scorer, `qwen3:4b` is the best fit for an 8 GB machine. Set `SCORER_REASONING_EFFORT=none`, otherwise it thinks for minutes per thread. Onboarding with `llama3.2` also gives generic keywords and misses competitors. For good results use an OpenAI model for both `LLM_*` (onboarding) and `SCORER_*` (labelling); together that's a few dollars a month.
+### Choosing a model
+
+Any model behind an OpenAI-compatible chat API works, for both onboarding (`LLM_*`) and labelling (`SCORER_*`). It needs JSON mode (`response_format: json_object`), which OpenAI, OpenRouter, Groq, Together, Ollama and LM Studio all support.
+
+| Provider | `*_BASE_URL` | `*_MODEL` example |
+|---|---|---|
+| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
+| OpenRouter | `https://openrouter.ai/api/v1` | `google/gemini-2.5-flash`, `anthropic/claude-haiku-4.5` |
+| Ollama (local, free) | `http://localhost:11434/v1` | `qwen3:4b` |
+| LM Studio (local, free) | `http://localhost:1234/v1` | whatever model you loaded |
+
+**Why `gpt-4o-mini` is the default:** of the models tested it was the cheapest that labelled the eval threads well, and it answers in about 1.5 s because it doesn't spend tokens "thinking" first. Reasoning models such as `gpt-5-mini` were about as accurate but 5× slower per thread and cost more, since their hidden reasoning is billed as output. For yes/no questions that buys little.
+
+Notes:
+- Reasoning models (`gpt-5*`, `o*`, `qwen3`, `deepseek-r1`): set `SCORER_REASONING_EFFORT` to the lowest value the provider accepts (`minimal` for OpenAI GPT-5, `none` for Ollama `qwen3`). Models that reject a custom `temperature` are retried without it automatically.
+- Onboarding runs once per project, so a stronger model there costs cents. Labelling runs per thread, so speed and price matter more.
+- On a local model, the most effective improvement is correcting labels in the inbox (see *Teaching the scorer*).
+
+**Test a model before switching** with the built-in eval, 18 real threads hand-labelled for an AI-visibility product:
+
+```zsh
+python -m backend.app.evaluate                                  # uses SCORER_* from .env
+python -m backend.app.evaluate --model qwen3:4b --reasoning-effort none
+python -m backend.app.evaluate --onboarding-provider --model gpt-5-mini   # reuse LLM_BASE_URL / LLM_API_KEY
+python -m backend.app.evaluate --limit 5                        # quick check
+```
+
+It costs under a cent per run on `gpt-4o-mini`. Without Reddit API keys it fetches threads over RSS, which takes ~10 minutes.
 
 ## File structure
 
@@ -188,6 +216,7 @@ reddit-leads/
 │   ├── examples.py     example pool + your corrections, 3 most similar go in each prompt
 │   ├── threads.py      thread → lead: fetch post + replies, score, store
 │   ├── rescore.py      re-label existing leads, one per thread
+│   ├── evaluate.py     score 18 hand-labelled threads to compare models
 │   └── worker.py       poll → filter → group by thread → score → save loop
 ├── web/                Next.js dashboard (landing page, projects, lead inbox)
 ├── Dockerfile          backend image (api + worker)

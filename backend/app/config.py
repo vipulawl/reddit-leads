@@ -25,7 +25,7 @@ class Settings(BaseSettings):
 
     llm_api_key: str = ""
     llm_base_url: str = "https://api.openai.com/v1"
-    llm_model: str = "gpt-5-mini"
+    llm_model: str = "gpt-4o-mini"
 
     database_url: str = "sqlite:///./data/leads.db"
     cors_origins: str = "http://localhost:3000"
