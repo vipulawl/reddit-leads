@@ -23,7 +23,7 @@ export default function ProjectPage({ params }) {
   const failed = project.description.startsWith("Setup failed");
 
   return (
-    <main>
+    <main className="wide">
       <a href="/projects" className="muted small">← Projects</a>
       <header className="row between">
         <h1>{project.name}</h1>
@@ -60,6 +60,12 @@ const INTENTS = {
   showcase: { label: "Show yours too", tab: "Show yours too", hint: "Someone is sharing their product here. Join in and show yours." },
   discussion: { label: "Discussion", tab: "Discussion", hint: "" },
 };
+const plain = (s) => s
+  .replace(/\*\*(.+?)\*\*|__(.+?)__/g, "$1$2")
+  .replace(/^#{1,6}\s+/gm, "")
+  .replace(/^\s*[*-]\s+/gm, "• ")
+  .replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g, "$1 ($2)")
+  .replace(/\\([\\`*_{}[\]()#+\-.!>~|])/g, "$1");
 const LEAD_TABS = ["buying", "pain", "showcase"];
 const RELABEL = [["buying", "Hot: asking for a tool"], ["pain", "Warm: has the problem"], ["showcase", "Self-promotion"],
   ["discussion", "Just discussion"], ["irrelevant", "Not relevant"]];
@@ -178,7 +184,7 @@ function LeadCard({ lead: l, onMark, onRefresh, onRelabel }) {
   }
 
   return (
-    <article className="card lead">
+    <article className={`card lead ${l.num_comments === 0 && l.matched_comments.length === 0 ? "no-replies" : ""}`}>
       <div className="stack lead-post">
         <div className="row between small muted">
           <span>r/{l.subreddit} · u/{l.author} · {timeAgo(l.posted_at)}</span>
@@ -197,7 +203,7 @@ function LeadCard({ lead: l, onMark, onRefresh, onRelabel }) {
         <strong>{l.title}</strong>
         {l.body && (
           <p className="body">
-            {expanded || !long ? l.body : `${l.body.slice(0, 700)}…`}
+            {plain(expanded || !long ? l.body : `${l.body.slice(0, 700)}…`)}
             {long && <button className="link small" onClick={() => setExpanded(!expanded)}> {expanded ? "less" : "more"}</button>}
           </p>
         )}
@@ -235,7 +241,7 @@ function Reply({ c, matched }) {
       <span className="small muted">
         u/{c.author}{c.score ? ` · ${c.score} pts` : ""}{matched ? " · matched your keywords" : ""}
       </span>
-      <span className="small">{c.body.length > 280 ? `${c.body.slice(0, 280)}…` : c.body}</span>
+      <span className="small">{plain(c.body.length > 280 ? `${c.body.slice(0, 280)}…` : c.body)}</span>
     </a>
   );
 }

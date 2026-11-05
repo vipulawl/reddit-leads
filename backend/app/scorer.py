@@ -57,6 +57,8 @@ Return only JSON: {{"reason": "<sentence>", {question_keys}, "fit": <0-3>}}"""
 PROMO_PATTERNS = [re.compile(p, re.I) for p in (
     r"\bi (?:built|made|created|launched|developed|shipped) (?:a|an|my|this|our)?\s?[\w\s-]{0,30}?(?:tool|app|product|extension|plugin|saas|platform|checker|tracker|dashboard|service|bot)\b",
     r"\bwe(?:'ve| have)? (?:built|launched|shipped|released)\b",
+    r"\b(?:i|we)(?:'ve| have)? been building\b",
+    r"\b(?:i'm|we're|i am|we are) giving away\b",
     r"\bi work (?:at|for) (?:a|an)\b",
     r"\bdisclosure\b",
     r"\b(?:my|our) (?:tool|app|product|startup|saas|platform|extension|newsletter)\b",

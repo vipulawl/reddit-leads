@@ -9,6 +9,7 @@
 body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, sans-serif; }
 main { max-width: 860px; margin: 0 auto; padding: 24px 16px 80px; }
 main.landing { max-width: 900px; }
+main.wide { max-width: none; padding: 24px 32px 80px; }
 .hero { padding: 10vh 0 48px; gap: 16px; }
 .hero h1 { font-size: clamp(30px, 5vw, 44px); line-height: 1.15; margin: 0; letter-spacing: -0.02em; }
 .hero .lead { font-size: 17px; margin: 0; max-width: 640px; }
@@ -56,8 +57,15 @@ header { margin-bottom: 12px; }
 .intent-discussion { color: var(--muted); }
 .hint { margin: 0; color: var(--muted); font-style: italic; }
 .lead { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; }
-.lead-replies { border-left: 1px solid var(--border); padding-left: 16px; gap: 8px; max-height: 520px; overflow-y: auto; }
+.lead-replies { border-left: 1px solid var(--border); padding-left: 16px; gap: 8px; max-height: 640px; overflow-y: auto; }
+@media (min-width: 1400px) {
+  .lead { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+@media (min-width: 721px) {
+  .lead.no-replies { grid-template-columns: minmax(0, 4fr) minmax(0, 1fr); }
+}
 @media (max-width: 720px) {
+  main.wide { padding: 16px 16px 80px; }
   .lead { grid-template-columns: minmax(0, 1fr); }
   .lead-replies { border-left: none; border-top: 1px solid var(--border); padding: 12px 0 0; max-height: none; }
 }
